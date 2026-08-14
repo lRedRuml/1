@@ -125,6 +125,10 @@ class _AuthScreenState extends State<AuthScreen> {
               Center(
                 child: Column(
                   children: [
+                    // [ИСПРАВЛЕНО — заглушка] Пустое кольцо без картинки —
+                    // тот же плейсхолдер, что и в AppHeader (см.
+                    // widgets/neon.dart). Теперь показывает реальную
+                    // иконку приложения.
                     Container(
                       width: 56,
                       height: 56,
@@ -132,6 +136,12 @@ class _AuthScreenState extends State<AuthScreen> {
                         shape: BoxShape.circle,
                         border: Border.all(color: AppColors.violet2, width: 2),
                         boxShadow: AppColors.glow(AppColors.violet2, blur: 16, alpha: 0.6),
+                      ),
+                      child: ClipOval(
+                        child: Image.asset(
+                          'assets/icon/app_icon_foreground.png',
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 12),

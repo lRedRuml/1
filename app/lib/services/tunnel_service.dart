@@ -13,14 +13,14 @@ import 'package:http/http.dart' as http;
 ///
 /// Модель данных: реальный `GET /user/keys` отдаёт на каждый ключ
 /// `connection_string` (см. api.py -> xui_api.get_key_details_from_host_sync
-/// в бэкенде бота). Модуль `xui_api`, который формирует эту строку, не
-/// входил в присланные файлы (только api.py/database.py) — поэтому нельзя
-/// быть на 100% уверенным в её формате без чтения xui_api.py. Есть два
-/// реалистичных варианта: (1) готовая ссылка `vless://...`, которую можно
-/// скормить `FlutterVless.parse()` сразу, или (2) URL подписки 3x-ui,
-/// который сначала нужно GET-нуть и результат отдать `parseMany()`.
-/// [_fetchProfile] ниже пробует оба варианта по префиксу строки — если
-/// в твоём `xui_api.py` формат другой, поправь именно эту функцию.
+/// в бэкенде бота). [ПОДТВЕРЖДЕНО] По исходникам публичного бота
+/// `evansvl/vless-shopbot` (src/shop_bot/modules/xui_api.py,
+/// `get_connection_string()`) эта строка ВСЕГДА готовая ссылка вида
+/// `vless://...&flow=xtls-rprx-vision#...` — а не URL подписки 3x-ui.
+/// [_fetchProfile] ниже всё равно оставляет ветку с GET-запросом как
+/// защитный фолбэк (на случай кастомного форка бота с другим форматом),
+/// но для штатного бота она не используется — основной путь всегда идёт
+/// через прямой парсинг `vless://`-ссылки.
 class TunnelService {
   TunnelService._();
   static final TunnelService instance = TunnelService._();
@@ -55,18 +55,19 @@ class TunnelService {
     _initialized = true;
   }
 
-  /// Скачивает содержимое подписки и возвращает первый рабочий VLESS-профиль.
+  /// Возвращает первый рабочий VLESS-профиль из `connection_string`.
   /// Кидает `TunnelException` с понятным для UI текстом вместо технической
   /// ошибки http/парсинга — экран подключения не должен показывать
   /// пользователю "FormatException" или "SocketException".
   Future<FlutterVlessURL> _fetchProfile(String connectionString) async {
     final direct = connectionString.trim();
 
-    // Вариант 1: уже готовая vless://-ссылка — парсим напрямую, без
-    // лишнего сетевого запроса. `parseMany` принимает и одиночную ссылку
-    // (она рассчитана на текст с одной или несколькими ссылками), поэтому
-    // отдельный `parse()` не нужен — не изобретаю метод, которого может не
-    // быть в конкретной версии пакета `flutter_vless`.
+    // Основной (и для штатного бота — единственный реальный) путь: это уже
+    // готовая vless://-ссылка — парсим напрямую, без лишнего сетевого
+    // запроса. `parseMany` принимает и одиночную ссылку (она рассчитана на
+    // текст с одной или несколькими ссылками), поэтому отдельный `parse()`
+    // не нужен — не изобретаю метод, которого может не быть в конкретной
+    // версии пакета `flutter_vless`.
     if (direct.startsWith('vless://') || direct.startsWith('vmess://')) {
       try {
         final profiles = FlutterVless.parseMany(direct);
@@ -81,8 +82,10 @@ class TunnelService {
       }
     }
 
-    // Вариант 2: это URL подписки 3x-ui — сначала GET, потом парсим тело
-    // (обычно список ссылок, часто в base64; parseMany сам это умеет).
+    // Защитный фолбэк на случай кастомного форка бота, где
+    // `connection_string` — не готовая ссылка, а URL подписки 3x-ui:
+    // сначала GET, потом парсим тело (обычно список ссылок, часто в
+    // base64; parseMany сам это умеет).
     late final http.Response res;
     try {
       res = await http.get(Uri.parse(direct)).timeout(const Duration(seconds: 12));

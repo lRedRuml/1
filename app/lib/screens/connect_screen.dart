@@ -26,9 +26,10 @@ import 'servers_screen.dart';
 ///
 /// [ИСПРАВЛЕНО] `measureBackendLatencyMs()` был методом придуманного
 /// бэкенда и в реальном ApiClient отсутствует. Задержку до backend теперь
-/// меряем на этом экране напрямую — секундомером вокруг лёгкого
-/// авторизованного запроса `getHosts()` (это всё равно нужные данные,
-/// отдельного /ping эндпоинта на сервере нет и придумывать его не стал).
+/// меряем на этом экране напрямую — секундомером вокруг обычного TCP-
+/// подключения к `connect_host`/`connect_port` выбранного сервера (это
+/// TCP handshake, реальный сетевой сигнал; отдельного /ping эндпоинта на
+/// сервере нет и придумывать его не стал).
 ///
 /// ВАЖНО: платформенная часть (App Group + Network Extension на iOS/macOS
 /// через Xcode, xray.exe на Windows) не может быть настроена только правкой
@@ -46,6 +47,21 @@ import 'servers_screen.dart';
 /// запрос с телефона физически не может пройти ("серверы не пингуются").
 /// Оба места исправлены — см. api_client.dart и
 /// android/app/src/main/AndroidManifest.xml.
+///
+/// [ИСПРАВЛЕНО — заглушки в статистике/тесте соединения] Жалоба "после
+/// подключения VPN приём 0 МБ, отдача 0 МБ, тест сервера не работает":
+/// 1) `_formatBytes()` округлял любые значения меньше 1 МБ до "0.0 MB" —
+///    визуально неотличимо от настоящего отсутствия трафика. Теперь малые
+///    значения показываются в КБ.
+/// 2) Кнопка "Тест скорости" при отключённом VPN не запускала проверку
+///    вообще — только показывала "подключись сначала". Теперь она всегда
+///    реально проверяет соединение (через уже существующий
+///    `TunnelService.connectedDelayMs()` / TCP-пробу) и показывает
+///    результат снэкбаром.
+/// 3) Раньше неудачный замер задержки не отличался от "ещё измеряю" —
+///    подпись рядом с сервером могла зависнуть на "проверка соединения…"
+///    навсегда. Теперь добавлены явные состояния `_measuringLatency` /
+///    `_latencyFailed`.
 class ConnectScreen extends StatefulWidget {
   const ConnectScreen({super.key});
   @override
@@ -62,6 +78,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Map<String, dynamic>? _selectedHost;
   String? _keyError;
   int? _latencyMs;
+  // [ИСПРАВЛЕНО] Раньше было только `_latencyMs` — при неудачном замере
+  // (сервер/интернет через VPN не отвечает) оно оставалось `null`, и
+  // `_latencyLabel` показывал "проверка соединения…" НАВСЕГДА, даже после
+  // того как проверка реально завершилась с ошибкой. Пользователь не мог
+  // отличить "ещё меряю" от "уже проверил — не отвечает". Теперь это два
+  // разных явных состояния.
+  bool _measuringLatency = false;
+  bool _latencyFailed = false;
 
   @override
   void initState() {
@@ -183,19 +207,28 @@ class _ConnectScreenState extends State<ConnectScreen> {
   }
 
   Future<void> _measureLatency() async {
+    if (mounted) setState(() { _measuringLatency = true; _latencyFailed = false; });
     // Если туннель уже поднят — меряем задержку ЧЕРЕЗ него (реальный сигнал
-    // для пользователя). Иначе — грубая оценка "жив ли backend" секундомером
-    // вокруг обычного авторизованного запроса (отдельного /ping эндпоинта
-    // на реальном сервере нет).
+    // для пользователя, что интернет РЕАЛЬНО проходит через VPN, а не
+    // только поднят сетевой интерфейс). Иначе — грубая оценка "жив ли
+    // сервер" секундомером вокруг TCP-подключения к его публичному адресу
+    // (отдельного /ping эндпоинта на реальном сервере нет).
     if (_tunnel.isConnected) {
       final ms = await _tunnel.connectedDelayMs();
-      if (mounted) setState(() => _latencyMs = ms);
+      if (!mounted) return;
+      setState(() {
+        _latencyMs = ms;
+        _measuringLatency = false;
+        _latencyFailed = ms == null;
+      });
       return;
     }
     final host = _selectedHost;
     final connectHost = host?['connect_host'] as String?;
     if (connectHost == null || connectHost.isEmpty) {
-      if (mounted) setState(() => _latencyMs = null);
+      // Данные о сервере ещё не загружены — это "неизвестно", а не
+      // "не отвечает", поэтому _latencyFailed здесь не взводим.
+      if (mounted) setState(() { _latencyMs = null; _measuringLatency = false; });
       return;
     }
     final port = (host?['connect_port'] as num?)?.toInt() ?? 443;
@@ -204,10 +237,41 @@ class _ConnectScreenState extends State<ConnectScreen> {
       final socket = await Socket.connect(connectHost, port, timeout: const Duration(seconds: 4));
       sw.stop();
       socket.destroy();
-      if (mounted) setState(() => _latencyMs = sw.elapsedMilliseconds);
+      if (!mounted) return;
+      setState(() {
+        _latencyMs = sw.elapsedMilliseconds;
+        _measuringLatency = false;
+        _latencyFailed = false;
+      });
     } catch (_) {
       sw.stop();
-      if (mounted) setState(() => _latencyMs = null);
+      if (!mounted) return;
+      setState(() {
+        _latencyMs = null;
+        _measuringLatency = false;
+        _latencyFailed = true;
+      });
+    }
+  }
+
+  /// [ИСПРАВЛЕНО — заглушка] Раньше кнопка "Тест скорости" при отключённом
+  /// VPN вообще не выполняла проверку — только показывала снэкбар
+  /// "подключись сначала" и выходила. Теперь тест реально запускается в
+  /// обоих состояниях (до и после подключения) и явно показывает результат
+  /// — а не молча полагается на мелкую подпись рядом с сервером.
+  Future<void> _runConnectionTest() async {
+    if (_measuringLatency) return;
+    await _measureLatency();
+    if (!mounted) return;
+    final connected = _tunnel.isConnected;
+    if (_latencyMs != null) {
+      _showInfo(connected
+          ? 'Интернет через VPN работает: $_latencyMs мс.'
+          : 'Сервер отвечает: $_latencyMs мс. Подключись, чтобы пустить через него трафик.');
+    } else {
+      _showError(connected
+          ? 'VPN подключен, но интернет через него не проходит. Попробуй сменить сервер или переподключиться.'
+          : 'Сервер не отвечает. Попробуй выбрать другую локацию.');
     }
   }
 
@@ -253,6 +317,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
     );
   }
 
+  void _showInfo(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.success),
+    );
+  }
+
   String get _timerLabel {
     final seconds = _tunnel.status.value?.duration ?? 0;
     final d = Duration(seconds: seconds);
@@ -262,18 +333,37 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return '$h:$m:$s';
   }
 
+  /// [ИСПРАВЛЕНО] Раньше любое значение меньше 1 МБ (например, реальные
+  /// первые 20-200 КБ сразу после подключения) округлялось до "0.0 MB" —
+  /// визуально неотличимо от "трафик вообще не идёт", хотя туннель мог
+  /// работать нормально. Теперь маленькие значения показываются в КБ, и
+  /// "0 KB" означает буквально ноль байт, а не "меньше одного мегабайта".
   String _formatBytes(num? bytes) {
-    if (bytes == null || bytes <= 0) return '0 MB';
-    final mb = bytes / (1024 * 1024);
-    if (mb < 1024) return '${mb.toStringAsFixed(1)} MB';
-    return '${(mb / 1024).toStringAsFixed(2)} GB';
+    final b = (bytes ?? 0).toDouble();
+    if (b <= 0) return '0 KB';
+    const kb = 1024;
+    const mb = kb * 1024;
+    const gb = mb * 1024;
+    if (b < mb) return '${(b / kb).toStringAsFixed(b < kb * 10 ? 1 : 0)} KB';
+    if (b < gb) return '${(b / mb).toStringAsFixed(1)} MB';
+    return '${(b / gb).toStringAsFixed(2)} GB';
   }
 
+  /// [ИСПРАВЛЕНО — заглушка] Раньше `_latencyMs == null` означало и "ещё не
+  /// мерял", и "померял — сервер/интернет не отвечает" одновременно, из-за
+  /// чего при реальном сбое подпись молча зависала на "проверка
+  /// соединения…" навсегда. Теперь неудачный результат показывается явно.
   String get _latencyLabel {
-    if (_latencyMs == null) return 'проверка соединения…';
-    if (_latencyMs! < 80) return '$_latencyMs мс · отличный сигнал';
-    if (_latencyMs! < 200) return '$_latencyMs мс · стабильно';
-    return '$_latencyMs мс · медленно';
+    if (_measuringLatency) return 'проверка соединения…';
+    if (_latencyMs != null) {
+      if (_latencyMs! < 80) return '$_latencyMs мс · отличный сигнал';
+      if (_latencyMs! < 200) return '$_latencyMs мс · стабильно';
+      return '$_latencyMs мс · медленно';
+    }
+    if (_latencyFailed) {
+      return _tunnel.isConnected ? 'нет интернета через VPN' : 'сервер не отвечает';
+    }
+    return 'проверка соединения…';
   }
 
   @override
@@ -313,7 +403,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
             code: serverCode,
             name: serverName,
             pingLabel: _latencyLabel,
-            pingColor: (_latencyMs != null && _latencyMs! < 200) ? AppColors.success : AppColors.textDim,
+            pingColor: _latencyFailed
+                ? AppColors.danger
+                : (_latencyMs != null && _latencyMs! < 200) ? AppColors.success : AppColors.textDim,
             trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textDim, size: 18),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ServersScreen())),
           ),
@@ -368,17 +460,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
             ),
           const SizedBox(height: 14),
           PillButton(
-            label: 'Тест скорости',
+            label: _measuringLatency ? 'Проверка…' : 'Тест скорости',
             icon: '⚡',
-            onTap: () {
-              if (!connected) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Тест скорости доступен после подключения к серверу')),
-                );
-                return;
-              }
-              _measureLatency();
-            },
+            onTap: _measuringLatency ? null : _runConnectionTest,
           ),
         ],
       ),

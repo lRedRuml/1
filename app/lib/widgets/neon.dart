@@ -37,6 +37,13 @@ class AppHeader extends StatelessWidget {
             children: [
               Row(
                 children: [
+                  // [ИСПРАВЛЕНО — заглушка] Раньше здесь был просто пустой
+                  // `Container` (кольцо без содержимого) — визуально
+                  // "логотип" в шапке не показывал никакой картинки. Теперь
+                  // внутри кольца реальная иконка приложения
+                  // (assets/icon/app_icon_foreground.png — прозрачный фон,
+                  // тот же файл использует flutter_launcher_icons для
+                  // adaptive-icon foreground на Android).
                   Container(
                     width: 26,
                     height: 26,
@@ -44,6 +51,12 @@ class AppHeader extends StatelessWidget {
                       shape: BoxShape.circle,
                       border: Border.all(color: AppColors.violet2, width: 2),
                       boxShadow: AppColors.glow(AppColors.violet2, blur: 10, alpha: 0.7),
+                    ),
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/icon/app_icon_foreground.png',
+                        fit: BoxFit.cover,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 8),
