@@ -1,44 +1,13 @@
-# Запускается ВРУЧНУЮ (вкладка Actions -> Scaffold native platforms -> Run
-# workflow) ОДИН РАЗ — генерирует android/ios/macos/windows/linux/web папки
-# через `flutter create .` (в этой репе их ещё нет — весь app/lib написан
-# вручную без Flutter SDK, см. историю чата) и коммитит их обратно в ветку.
-#
-# После первого успешного запуска эти папки уже лежат в репозитории —
-# повторно этот workflow запускать не нужно (разве что захочешь
-# пересоздать их с нуля после серьёзного апгрейда Flutter).
-name: Scaffold native platforms
+name: Test Actions Runner
 
 on:
-  workflow_dispatch: {}
-
-permissions:
-  contents: write
+  workflow_dispatch:
 
 jobs:
-  scaffold:
+  test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-
-      - name: flutter create (adds only missing platform folders, does not touch lib/)
-        working-directory: app
-        run: |
-          flutter create --platforms=android,ios,macos,windows,linux,web \
-            --org su.vpnonline --project-name vpnonline_app .
-
-      - name: flutter pub get
-        working-directory: app
-        run: flutter pub get
-
-      - name: Commit generated platform folders
-        run: |
-          git config user.name "vpnonline-ci"
-          git config user.email "ci@vpnonline.su"
-          git add app/android app/ios app/macos app/windows app/linux app/web 2>/dev/null || true
-          git diff --cached --quiet && echo "Нечего коммитить — папки уже есть" && exit 0
-          git commit -m "ci: scaffold native platform folders via flutter create"
-          git push
+      - name: Hello
+        run: echo "Hello from Actions"
+      - name: Show date
+        run: date
