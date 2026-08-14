@@ -37,6 +37,16 @@ class _AuthScreenState extends State<AuthScreen> {
   String? _error;
   String? _info;
 
+  @override
+  void dispose() {
+    _emailCtrl.dispose();
+    _usernameCtrl.dispose();
+    _passwordCtrl.dispose();
+    _codeCtrl.dispose();
+    _newPasswordCtrl.dispose();
+    super.dispose();
+  }
+
   Future<void> _run(Future<void> Function() action, {String? successInfo, _Mode? nextMode}) async {
     setState(() {
       _loading = true;

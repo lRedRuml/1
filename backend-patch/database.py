@@ -685,6 +685,17 @@ def get_all_hosts() -> list[dict]:
         logging.error(f"Ошибка получения списка всех хостов: {e}")
         return []
 
+def get_all_plans() -> list[dict]:
+    try:
+        with sqlite3.connect(DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM plans ORDER BY TRIM(host_name), months, plan_id")
+            return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.Error as e:
+        logging.error(f"Ошибка получения всех тарифов: {e}")
+        return []
+
 def get_speedtests(host_name: str, limit: int = 20) -> list[dict]:
     """Получить последние результаты спидтестов по хосту (ssh/net), новые сверху."""
     try:

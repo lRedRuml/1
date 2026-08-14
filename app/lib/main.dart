@@ -127,17 +127,23 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   int _index = 0;
 
+  late final List<Widget> _screens = [
+    const ConnectScreen(),
+    const KeysScreen(),
+    const PlansScreen(),
+    const ServersScreen(),
+    MenuScreen(onLoggedOut: widget.onLoggedOut),
+  ];
+
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      const ConnectScreen(),
-      const KeysScreen(),
-      const PlansScreen(),
-      const ServersScreen(),
-      MenuScreen(onLoggedOut: widget.onLoggedOut),
-    ];
     return Scaffold(
-      body: SafeArea(child: screens[_index]),
+      body: SafeArea(
+        child: IndexedStack(
+          index: _index,
+          children: _screens,
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),

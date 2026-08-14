@@ -10,6 +10,7 @@ import hmac
 import urllib.request
 import urllib.error
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from functools import wraps
 import bcrypt
@@ -24,7 +25,7 @@ from shop_bot.data_manager.database import (
     adjust_user_balance, add_new_key, get_plan_by_id, register_user_if_not_exists,
     set_trial_used, get_key_by_email, get_referral_count, get_referral_balance_all,
     update_user_password, get_key_by_id, upgrade_key_devices, update_key_info,
-    deduct_from_balance, save_verification_code, get_verification_code,
+    deduct_from_balance, save_verification_code, get_verification_code, get_all_plans,
     delete_verification_code, cleanup_expired_verification_codes,
     check_and_record_rate_limit
 )
@@ -122,6 +123,8 @@ def require_user_auth(f):
 # нескольких воркерах Flask, см. REPORT.md.
 _RATE_LIMIT_MAX = 3      # max attempts
 _RATE_LIMIT_WINDOW = 600  # seconds (10 min)
+_VERIFICATION_CLEANUP_INTERVAL_SECONDS = 300
+_last_verification_cleanup_ts = 0.0
 
 def _check_rate_limit(email: str) -> bool:
     """Returns True if sending is allowed, False if rate limit exceeded.
@@ -131,7 +134,19 @@ def _check_rate_limit(email: str) -> bool:
 
 def _cleanup_verification_codes():
     """Remove expired verification codes to prevent memory growth."""
+    global _last_verification_cleanup_ts
+    now = datetime.now().timestamp()
+    if now - _last_verification_cleanup_ts < _VERIFICATION_CLEANUP_INTERVAL_SECONDS:
+        return
     cleanup_expired_verification_codes()
+    _last_verification_cleanup_ts = now
+
+
+def _plan_duration_days(months: int | str | float | None) -> int:
+    try:
+        return max(1, int(months or 0)) * 30
+    except (TypeError, ValueError):
+        return 30
 
 def send_email(to_email, subject, body):
     gmail_user = os.getenv('GMAIL_USER', 'VPNonLineRoBot@gmail.com')
@@ -674,15 +689,20 @@ def api_claim_trial():
 @require_user_auth
 def api_user_keys():
     keys = get_user_keys(request.user_id)
-    for k in keys:
-        try:
-            details = xui_api.get_key_details_from_host_sync(k)
-            if details:
-                k['connection_string'] = details.get('connection_string') or ''
-            else:
-                k['connection_string'] = ''
-        except Exception:
-            k['connection_string'] = ''
+    if keys:
+        max_workers = min(8, len(keys))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_key = {
+                executor.submit(xui_api.get_key_details_from_host_sync, key): key
+                for key in keys
+            }
+            for future in as_completed(future_to_key):
+                key = future_to_key[future]
+                try:
+                    details = future.result()
+                    key['connection_string'] = (details or {}).get('connection_string') or ''
+                except Exception:
+                    key['connection_string'] = ''
     return jsonify({
         "ok": True,
         "keys": keys
@@ -785,31 +805,25 @@ def api_hosts():
 @require_api_key
 def api_plans():
     hosts = get_all_hosts()
+    all_plans = get_all_plans()
     plans_by_host = {}
-    
-    # Load GLOBAL plans (used by the bot for unified global sub)
-    global_plans = get_plans_for_host('GLOBAL')
-    if global_plans:
-        plans_by_host['GLOBAL'] = [
+
+    for plan in all_plans:
+        host_name = plan["host_name"]
+        plans_by_host.setdefault(host_name, []).append(
             {
-                "plan_id": p["plan_id"],
-                "plan_name": p["plan_name"],
-                "months": p["months"],
-                "price": p["price"]
-            } for p in global_plans
-        ]
-        
+                "plan_id": plan["plan_id"],
+                "plan_name": plan["plan_name"],
+                "months": plan["months"],
+                "price": plan["price"]
+            }
+        )
+
+    if 'GLOBAL' not in plans_by_host:
+        plans_by_host['GLOBAL'] = []
+
     for h in hosts:
-        host_name = h["host_name"]
-        plans = get_plans_for_host(host_name)
-        plans_by_host[host_name] = [
-            {
-                "plan_id": p["plan_id"],
-                "plan_name": p["plan_name"],
-                "months": p["months"],
-                "price": p["price"]
-            } for p in plans
-        ]
+        plans_by_host.setdefault(h["host_name"], [])
     return jsonify({
         "ok": True,
         "plans": plans_by_host
@@ -872,7 +886,8 @@ def api_create_key():
     # Ensure unique email on XUI panel
     email_unique = f"{username_slug}-{secrets.token_hex(4)}@site.local"
     
-    expiry_ms = int((datetime.now().timestamp() + (months * 86400)) * 1000)
+    plan_days = _plan_duration_days(months)
+    expiry_ms = int((datetime.now() + timedelta(days=plan_days)).timestamp() * 1000)
 
     # 1) Provision the client on XUI panels
     # For unified Multi-Host Subscription, we provision on ALL hosts
@@ -975,9 +990,9 @@ def api_extend_key():
         current_expiry = datetime.now()
 
     if current_expiry > datetime.now():
-        new_expiry = current_expiry + timedelta(days=months)
+        new_expiry = current_expiry + timedelta(days=_plan_duration_days(months))
     else:
-        new_expiry = datetime.now() + timedelta(days=months)
+        new_expiry = datetime.now() + timedelta(days=_plan_duration_days(months))
 
     new_expiry_ms = int(new_expiry.timestamp() * 1000)
 
@@ -1168,4 +1183,3 @@ def verify_telegram_webapp_data(init_data: str, bot_token: str) -> dict | None:
     except Exception as e:
         logger.error(f"Error verifying Telegram WebApp initData: {e}")
     return None
-

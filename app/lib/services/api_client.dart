@@ -42,7 +42,9 @@ class ApiClient {
 
   final String baseUrl;
   final String apiKey;
+  final http.Client _http = http.Client();
   String? _token;
+  static const Duration _requestTimeout = Duration(seconds: 15);
 
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'vpnonline_session_token_v1';
@@ -78,12 +80,25 @@ class ApiClient {
 
   Uri _u(String path) => Uri.parse('$baseUrl$path');
 
+  Future<http.Response> _get(String path) {
+    return _http.get(_u(path), headers: _headers).timeout(_requestTimeout);
+  }
+
+  Future<http.Response> _post(String path, {Map<String, dynamic>? body}) {
+    return _http
+        .post(
+          _u(path),
+          headers: _headers,
+          body: body == null ? null : jsonEncode(body),
+        )
+        .timeout(_requestTimeout);
+  }
+
   // ------------------------------------------------------------- auth
 
   /// POST /auth/register/send-code {email}
   Future<void> registerSendCode(String email) async {
-    final res = await http.post(_u('/auth/register/send-code'),
-        headers: _headers, body: jsonEncode({'email': email}));
+    final res = await _post('/auth/register/send-code', body: {'email': email});
     _checkOk(res);
   }
 
@@ -95,15 +110,14 @@ class ApiClient {
     required String code,
     String? username,
   }) async {
-    final res = await http.post(
-      _u('/auth/register'),
-      headers: _headers,
-      body: jsonEncode({
+    final res = await _post(
+      '/auth/register',
+      body: {
         'email': email,
         'password': password,
         'code': code,
         if (username != null) 'username': username,
-      }),
+      },
     );
     _checkOk(res);
     final data = jsonDecode(res.body) as Map<String, dynamic>;
@@ -118,8 +132,7 @@ class ApiClient {
   /// того, существует ли аккаунт — здесь ничего дополнительно делать не
   /// нужно, просто не полагайся на код ответа как признак "email существует".
   Future<void> resetPasswordSendCode(String email) async {
-    final res = await http.post(_u('/auth/reset-password/send-code'),
-        headers: _headers, body: jsonEncode({'email': email}));
+    final res = await _post('/auth/reset-password/send-code', body: {'email': email});
     _checkOk(res);
   }
 
@@ -129,21 +142,14 @@ class ApiClient {
     required String code,
     required String newPassword,
   }) async {
-    final res = await http.post(
-      _u('/auth/reset-password/confirm'),
-      headers: _headers,
-      body: jsonEncode({'email': email, 'code': code, 'new_password': newPassword}),
-    );
+    final res = await _post('/auth/reset-password/confirm',
+        body: {'email': email, 'code': code, 'new_password': newPassword});
     _checkOk(res);
   }
 
   /// POST /auth/login {email, password}
   Future<Map<String, dynamic>> login({required String email, required String password}) async {
-    final res = await http.post(
-      _u('/auth/login'),
-      headers: _headers,
-      body: jsonEncode({'email': email, 'password': password}),
-    );
+    final res = await _post('/auth/login', body: {'email': email, 'password': password});
     _checkOk(res);
     final data = jsonDecode(res.body) as Map<String, dynamic>;
     await _setToken(data['token'] as String);
@@ -156,14 +162,14 @@ class ApiClient {
   /// приглашение приходят ОДНИМ вызовом (так устроен реальный API, отдельного
   /// эндпоинта /referral или /balance на сервере нет — не выдумываем лишний).
   Future<Map<String, dynamic>> getProfile() async {
-    final res = await http.get(_u('/user/profile'), headers: _headers);
+    final res = await _get('/user/profile');
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['user'] as Map<String, dynamic>;
   }
 
   /// POST /user/trial — активировать бесплатный пробный период.
   Future<Map<String, dynamic>> claimTrial() async {
-    final res = await http.post(_u('/user/trial'), headers: _headers);
+    final res = await _post('/user/trial');
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['key'] as Map<String, dynamic>;
   }
@@ -172,7 +178,7 @@ class ApiClient {
 
   /// GET /user/keys
   Future<List<dynamic>> getKeys() async {
-    final res = await http.get(_u('/user/keys'), headers: _headers);
+    final res = await _get('/user/keys');
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['keys'] as List<dynamic>;
   }
@@ -180,8 +186,7 @@ class ApiClient {
   /// POST /key/upgrade-devices {key_id} — докупить слот устройства (+50 RUB,
   /// максимум 4 на ключ — лимиты те же, что реально заданы на сервере).
   Future<int> upgradeKeyDevices(int keyId) async {
-    final res = await http.post(_u('/key/upgrade-devices'),
-        headers: _headers, body: jsonEncode({'key_id': keyId}));
+    final res = await _post('/key/upgrade-devices', body: {'key_id': keyId});
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['new_limit'] as int;
   }
@@ -189,16 +194,14 @@ class ApiClient {
   /// POST /key/create {plan_id} — списывает баланс и выдаёt ключ сразу на
   /// всех хостах (GLOBAL bundle), это уже так устроено на сервере.
   Future<Map<String, dynamic>> createKey(int planId) async {
-    final res = await http.post(_u('/key/create'),
-        headers: _headers, body: jsonEncode({'plan_id': planId}));
+    final res = await _post('/key/create', body: {'plan_id': planId});
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['key'] as Map<String, dynamic>;
   }
 
   /// POST /key/extend {key_id, plan_id}
   Future<Map<String, dynamic>> extendKey({required int keyId, required int planId}) async {
-    final res = await http.post(_u('/key/extend'),
-        headers: _headers, body: jsonEncode({'key_id': keyId, 'plan_id': planId}));
+    final res = await _post('/key/extend', body: {'key_id': keyId, 'plan_id': planId});
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['key'] as Map<String, dynamic>;
   }
@@ -212,7 +215,7 @@ class ApiClient {
   /// появится здесь автоматически, без изменений кода — так уже работает
   /// сегодня на реальном сервере.
   Future<List<dynamic>> getHosts() async {
-    final res = await http.get(_u('/hosts'), headers: _headers);
+    final res = await _get('/hosts');
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['hosts'] as List<dynamic>;
   }
@@ -221,7 +224,7 @@ class ApiClient {
   /// ключ "GLOBAL" (единый тариф на бандл из всех локаций — то, что мы
   /// показываем на главном экране покупки).
   Future<Map<String, dynamic>> getPlans() async {
-    final res = await http.get(_u('/plans'), headers: _headers);
+    final res = await _get('/plans');
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['plans'] as Map<String, dynamic>;
   }
@@ -230,11 +233,7 @@ class ApiClient {
 
   /// POST /billing/topup {amount, method: 'yookassa'|'cryptobot'} -> pay_url
   Future<String> billingTopup({required double amount, required String method}) async {
-    final res = await http.post(
-      _u('/billing/topup'),
-      headers: _headers,
-      body: jsonEncode({'amount': amount, 'method': method}),
-    );
+    final res = await _post('/billing/topup', body: {'amount': amount, 'method': method});
     _checkOk(res);
     return (jsonDecode(res.body) as Map<String, dynamic>)['pay_url'] as String;
   }
@@ -269,4 +268,3 @@ class ApiException implements Exception {
 /// }
 ///
 /// Сборка: flutter build apk --release --dart-define=SHOPBOT_API_KEY=<ключ из .env сервера>
-
