@@ -107,6 +107,34 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return expiry != null && expiry.isAfter(DateTime.now());
   }
 
+  DateTime? _expiryOf(Map<String, dynamic> key) {
+    final expiryStr = key['expiry_date'] as String?;
+    return expiryStr != null ? DateTime.tryParse(expiryStr) : null;
+  }
+
+  /// [ИСПРАВЛЕНО] Если у пользователя несколько активных ключей (например,
+  /// продлевал подписку несколько раз, или есть старый и новый тариф),
+  /// раньше в качестве "активного" бралcя просто первый попавшийся ключ из
+  /// ответа API — независимо от того, сколько дней аренды у него осталось.
+  /// Это могло выбрать ключ с истекающей через день арендой вместо ключа с
+  /// большим остатком, из-за чего подключение выглядело "сломанным"
+  /// (работало на коротком ключе, который скоро гас, или путало пользователя).
+  /// Теперь среди активных ключей выбирается тот, у кого `expiry_date`
+  /// максимальный — то есть ключ с самым большим оставшимся сроком аренды.
+  Map<String, dynamic>? _pickLongestActiveKey(Iterable<Map<String, dynamic>> activeKeys) {
+    Map<String, dynamic>? best;
+    DateTime? bestExpiry;
+    for (final key in activeKeys) {
+      final expiry = _expiryOf(key);
+      if (expiry == null) continue;
+      if (bestExpiry == null || expiry.isAfter(bestExpiry)) {
+        best = key;
+        bestExpiry = expiry;
+      }
+    }
+    return best;
+  }
+
   String _displayNameForHost(Map<String, dynamic> host) {
     return (host['display_name'] as String?) ??
         (host['name'] as String?) ??
@@ -121,6 +149,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       final keys = results[0] as List<dynamic>;
       final hosts = (results[1] as List<dynamic>).cast<Map<String, dynamic>>();
       final active = keys.cast<Map<String, dynamic>>().where(_isActive);
+      final longestActive = _pickLongestActiveKey(active);
       Map<String, dynamic>? selectedHost;
       if (hosts.isNotEmpty) {
         for (final host in hosts) {
@@ -139,7 +168,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
       }
       setState(() {
         _hosts = hosts;
-        _activeKey = active.isNotEmpty ? active.first : null;
+        _activeKey = longestActive;
         _selectedHost = selectedHost;
         _keyError = null;
         _loadingKey = false;
