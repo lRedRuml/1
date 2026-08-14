@@ -127,15 +127,24 @@ class RootShell extends StatefulWidget {
 class _RootShellState extends State<RootShell> {
   int _index = 0;
   late final List<Widget?> _screens = List<Widget?>.filled(5, null);
+  late final List<Widget> _screenSlots =
+      List<Widget>.generate(_screens.length, (_) => const SizedBox.shrink());
 
-  Widget _buildScreen(int index) {
-    return _screens[index] ??= switch (index) {
+  @override
+  void initState() {
+    super.initState();
+    _ensureScreenBuilt(_index);
+  }
+
+  void _ensureScreenBuilt(int index) {
+    final screen = _screens[index] ??= switch (index) {
       0 => const ConnectScreen(),
       1 => const KeysScreen(),
       2 => const PlansScreen(),
       3 => const ServersScreen(),
       _ => MenuScreen(onLoggedOut: widget.onLoggedOut),
     };
+    _screenSlots[index] = screen;
   }
 
   @override
@@ -144,15 +153,15 @@ class _RootShellState extends State<RootShell> {
       body: SafeArea(
         child: IndexedStack(
           index: _index,
-          children: List<Widget>.generate(
-            _screens.length,
-            (i) => _screens[i] ?? (i == _index ? _buildScreen(i) : const SizedBox.shrink()),
-          ),
+          children: _screenSlots,
         ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
+        onDestinationSelected: (i) => setState(() {
+          _ensureScreenBuilt(i);
+          _index = i;
+        }),
         destinations: const [
           NavigationDestination(icon: Icon(Icons.home_rounded), label: 'Главная'),
           NavigationDestination(icon: Icon(Icons.vpn_key_rounded), label: 'Ключи'),
