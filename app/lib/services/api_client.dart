@@ -30,6 +30,11 @@ class ApiClient {
     return i;
   }
 
+  static void dispose() {
+    _instance?._http.close();
+    _instance = null;
+  }
+
   /// [ВАЖНО] apiKey передаётся при сборке через
   /// `flutter build apk --dart-define=SHOPBOT_API_KEY=<реальный ключ из .env>`
   /// — НЕ пишется буквально в этот файл и не коммитится в git. Это не
