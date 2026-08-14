@@ -125,8 +125,9 @@ class RootShell extends StatefulWidget {
 }
 
 class _RootShellState extends State<RootShell> {
+  static const _tabCount = 5;
   int _index = 0;
-  late final List<Widget?> _screens = List<Widget?>.filled(5, null);
+  late final List<Widget?> _screens = List<Widget?>.filled(_tabCount, null);
   late final List<Widget> _screenSlots =
       List<Widget>.generate(_screens.length, (_) => const SizedBox.shrink());
 

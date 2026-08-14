@@ -93,6 +93,13 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return expiry != null && expiry.isAfter(DateTime.now());
   }
 
+  String _displayNameForHost(Map<String, dynamic> host) {
+    return (host['display_name'] as String?) ??
+        (host['name'] as String?) ??
+        (host['host_name'] as String?) ??
+        'Сервер не выбран';
+  }
+
   Future<void> _loadKeyState() async {
     setState(() => _loadingKey = true);
     try {
@@ -110,9 +117,10 @@ class _ConnectScreenState extends State<ConnectScreen> {
         }
         selectedHost ??= hosts.first;
         final hostName = selectedHost?['host_name'] as String?;
+        final displayName = selectedHost != null ? _displayNameForHost(selectedHost) : null;
         if (hostName != null &&
-            (SelectedServer.hostName.value != hostName || SelectedServer.displayName.value == null)) {
-          SelectedServer.select(hostName, hostName);
+            (SelectedServer.hostName.value != hostName || SelectedServer.displayName.value != displayName)) {
+          SelectedServer.select(hostName, displayName ?? hostName);
         }
       }
       setState(() {
