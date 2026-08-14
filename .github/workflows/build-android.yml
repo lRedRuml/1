@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main, fix/secure-configs-and-ci ]
+    branches: [ main, fix/secure-configs-and-ci, 'copilot/**' ]
   pull_request:
     branches: [ main ]
 
