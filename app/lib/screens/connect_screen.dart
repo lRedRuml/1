@@ -3,6 +3,7 @@ import '../theme.dart';
 import '../widgets/neon.dart';
 import '../services/api_client.dart';
 import '../services/tunnel_service.dart';
+import '../state/selected_server.dart';
 import 'plans_screen.dart';
 import 'servers_screen.dart';
 
@@ -49,16 +50,22 @@ class _ConnectScreenState extends State<ConnectScreen> {
   void initState() {
     super.initState();
     _tunnel.status.addListener(_onTunnelStatus);
+    SelectedServer.displayName.addListener(_onServerSelected);
     _loadKeyState();
   }
 
   @override
   void dispose() {
     _tunnel.status.removeListener(_onTunnelStatus);
+    SelectedServer.displayName.removeListener(_onServerSelected);
     super.dispose();
   }
 
   void _onTunnelStatus() {
+    if (mounted) setState(() {});
+  }
+
+  void _onServerSelected() {
     if (mounted) setState(() {});
   }
 
@@ -168,12 +175,22 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return '$_latencyMs мс · медленно';
   }
 
+  String _getCountryCode(String? name) {
+    if (name == null || name.isEmpty) return '??';
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return '??';
+    final firstWord = trimmed.split(RegExp(r'\s+')).first;
+    return firstWord.length >= 2 ? firstWord.substring(0, 2).toUpperCase() : firstWord.toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasKey = _activeKey != null;
     final connected = _tunnel.isConnected;
     final s = _tunnel.status.value;
     final devicesLimit = hasKey ? (_activeKey!['devices_limit'] as num?)?.toInt() : null;
+    final selectedServerName = SelectedServer.displayName.value ?? 'Сервер';
+    final serverCountryCode = _getCountryCode(selectedServerName);
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
@@ -194,8 +211,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
               child: Text(_keyError!, style: const TextStyle(color: AppColors.danger, fontSize: 12)),
             ),
           ServerPill(
-            code: 'DE',
-            name: 'Германия · Frankfurt',
+           code: serverCountryCode,
+           name: selectedServerName,
             pingLabel: _latencyLabel,
             pingColor: (_latencyMs != null && _latencyMs! < 200) ? AppColors.success : AppColors.textDim,
             trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textDim, size: 18),
