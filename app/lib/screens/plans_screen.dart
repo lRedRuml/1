@@ -74,10 +74,20 @@ class _PlansScreenState extends State<PlansScreen> {
   }
 
   String _periodLabel(num months) {
-    final m = months.toInt();
-    if (m == 1) return '1 месяц';
-    if (m >= 2 && m <= 4) return '$m месяца';
-    return '$m месяцев';
+    final days = (months.toDouble() * 30).round();
+    final mod100 = days % 100;
+    final mod10 = days % 10;
+    final String word;
+    if (mod100 >= 11 && mod100 <= 14) {
+      word = 'дней';
+    } else if (mod10 == 1) {
+      word = 'день';
+    } else if (mod10 >= 2 && mod10 <= 4) {
+      word = 'дня';
+    } else {
+      word = 'дней';
+    }
+    return '$days $word';
   }
 
   double _pricePerMonth(Map<String, dynamic> plan) {
@@ -137,64 +147,72 @@ class _PlansScreenState extends State<PlansScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppHeader(screenLabel: _isExtend ? 'Продление ключа' : 'Оформление подписки'),
-          const Text(
-            'Единый VPN-ключ даёт доступ ко всем локациям сразу — выбирать сервер не нужно. '
-            'Оплата — с баланса аккаунта.',
-            style: TextStyle(color: AppColors.textDim, fontSize: 11),
-          ),
-          if (_loading) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 12))),
-                  TextButton(onPressed: _load, child: const Text('Повторить')),
+    return Scaffold(
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              AppHeader(screenLabel: _isExtend ? 'Продление ключа' : 'Оформление подписки'),
+              const Text(
+                'Единый VPN-ключ даёт доступ ко всем локациям сразу — выбирать сервер не нужно. '
+                'Оплата — с баланса аккаунта.',
+                style: TextStyle(color: AppColors.textDim, fontSize: 11),
+              ),
+              // [ИСПРАВЛЕНО] Раньше список тарифов шёл сразу после описания
+              // без отступа — на части устройств первая карточка визуально
+              // наезжала на строку описания сверху. Добавлен отступ вниз.
+              const SizedBox(height: 16),
+              if (_loading) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      Expanded(child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 12))),
+                      TextButton(onPressed: _load, child: const Text('Повторить')),
+                    ],
+                  ),
+                ),
+              if (_plans != null && _plans!.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text('Тарифы пока не настроены в панели бота (нет тарифов для host "GLOBAL").',
+                      style: TextStyle(color: AppColors.textDim)),
+                ),
+              if (_plans != null)
+                for (var i = 0; i < _plans!.length; i++) ...[
+                  _PlanCard(
+                    plan: _plans![i] as Map<String, dynamic>,
+                    selected: _selected == i,
+                    periodLabel: _periodLabel((_plans![i] as Map<String, dynamic>)['months'] as num),
+                    perMonth: _pricePerMonth(_plans![i] as Map<String, dynamic>),
+                    onTap: () => setState(() => _selected = i),
+                  ),
+                  const SizedBox(height: 10),
                 ],
-              ),
-            ),
-          if (_plans != null && _plans!.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Text('Тарифы пока не настроены в панели бота (нет тарифов для host "GLOBAL").',
-                  style: TextStyle(color: AppColors.textDim)),
-            ),
-          if (_plans != null)
-            for (var i = 0; i < _plans!.length; i++) ...[
-              _PlanCard(
-                plan: _plans![i] as Map<String, dynamic>,
-                selected: _selected == i,
-                periodLabel: _periodLabel((_plans![i] as Map<String, dynamic>)['months'] as num),
-                perMonth: _pricePerMonth(_plans![i] as Map<String, dynamic>),
-                onTap: () => setState(() => _selected = i),
-              ),
-              const SizedBox(height: 10),
+              if (_plans != null && _plans!.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Center(
+                  child: _submitting
+                      ? const Padding(
+                          padding: EdgeInsets.all(8),
+                          child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : PillButton(
+                          label: _isExtend
+                              ? 'Продлить — ${(_plans![_selected] as Map<String, dynamic>)['price']} ₽'
+                              : 'Получить ключ — ${(_plans![_selected] as Map<String, dynamic>)['price']} ₽',
+                          icon: '🔒',
+                          filled: true,
+                          onTap: _submit,
+                        ),
+                ),
+              ],
             ],
-          if (_plans != null && _plans!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Center(
-              child: _submitting
-                  ? const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-                    )
-                  : PillButton(
-                      label: _isExtend
-                          ? 'Продлить — ${(_plans![_selected] as Map<String, dynamic>)['price']} ₽'
-                          : 'Получить ключ — ${(_plans![_selected] as Map<String, dynamic>)['price']} ₽',
-                      icon: '🔒',
-                      filled: true,
-                      onTap: _submit,
-                    ),
-            ),
-          ],
-        ],
+          ),
+        ),
       ),
     );
   }

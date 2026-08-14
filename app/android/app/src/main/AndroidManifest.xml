@@ -1,4 +1,24 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <!-- [ИСПРАВЛЕНО] Release-манифест (в отличие от debug/profile —
+         см. src/debug и src/profile) НЕ получает INTERNET автоматически.
+         Без этого разрешения релизная сборка (та, что реально ставят на
+         телефон и публикуют) не может выполнить НИ ОДИН сетевой запрос —
+         ни к /api/v1 (логин, ключи, серверы, тарифы), ни сам VPN-туннель:
+         кнопка "Подключить" технически не может ничего сделать, а
+         "серверы не пингуются" — ровно то поведение, которое даёт
+         SecurityException при попытке открыть сокет без этого разрешения.
+    -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- [НОВОЕ] Требуется для реального списка приложений на экране
+         split-tunnel (installed_apps, см. NATIVE_SETUP.md и
+         screens/split_tunnel_screen.dart) — без него
+         InstalledApps.getInstalledApps() возвращает пустой список/кидает
+         исключение. tools:ignore — чувствительное разрешение, Google Play
+         спросит обоснование при публикации (см. NATIVE_SETUP.md). -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission"/>
     <application
         android:label="vpnonline_app"
         android:name="${applicationName}"
@@ -43,3 +63,4 @@
         </intent>
     </queries>
 </manifest>
+

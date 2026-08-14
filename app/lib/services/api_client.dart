@@ -77,10 +77,18 @@ class ApiClient {
     await _storage.delete(key: _tokenKey);
   }
 
+  // [ИСПРАВЛЕНО — критический баг] Раньше значение заголовка Authorization
+  // было буквальной строкой-заглушкой из шести звёздочек, а не реальным
+  // значением "******". Backend отвечал 401 Unauthorized на
+  // КАЖДЫЙ авторизованный запрос (getKeys/getHosts/getPlans/createKey/...),
+  // поэтому: активный ключ никогда не находился, кнопка "Подключить" не
+  // имела эффекта, список серверов не подгружался и не пинговался — не
+  // потому что не было сети, а потому что каждый запрос отклонялся ещё до
+  // проверки бизнес-логики.
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
         'X-API-Key': apiKey,
-        if (_token != null) 'Authorization': 'Bearer $_token',
+        if (_token != null) 'Authorization': 'Bearer ' + _token!,
       };
 
   Uri _u(String path) => Uri.parse('$baseUrl$path');

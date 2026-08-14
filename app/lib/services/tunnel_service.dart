@@ -106,8 +106,12 @@ class TunnelService {
   }
 
   /// Подключение. [connectionString] — берётся из поля `connection_string`
-  /// активного ключа (см. ApiClient.getKeys()).
-  Future<void> connect(String connectionString) async {
+  /// активного ключа (см. ApiClient.getKeys()). [blockedApps] — пакеты,
+  /// помеченные в SplitTunnelScreen как "идут в обход VPN" (см.
+  /// screens/split_tunnel_screen.dart); поддерживается `flutter_vless` через
+  /// параметр `blockedApps` у `startVless` (Android-only — на других
+  /// платформах пакет молча игнорирует список).
+  Future<void> connect(String connectionString, {List<String>? blockedApps}) async {
     lastError.value = null;
     await _ensureInitialized();
 
@@ -122,6 +126,7 @@ class TunnelService {
       await _vless!.startVless(
         remark: profile.remark.isNotEmpty ? profile.remark : 'VPNonLine',
         config: profile.getFullConfiguration(),
+        blockedApps: (blockedApps != null && blockedApps.isNotEmpty) ? blockedApps : null,
         notificationDisconnectButtonName: 'Отключить',
       );
     } catch (e) {

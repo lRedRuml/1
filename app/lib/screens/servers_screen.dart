@@ -170,14 +170,16 @@ class _ServersScreenState extends State<ServersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+    return Scaffold(
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
             AppHeader(
               trailing: Icons.refresh_rounded,
               onTrailingTap: _load,
@@ -303,6 +305,8 @@ class _ServersScreenState extends State<ServersScreen> {
               ),
             ),
           ],
+            ),
+          ),
         ),
       ),
     );

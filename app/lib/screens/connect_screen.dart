@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/neon.dart';
 import '../services/api_client.dart';
+import '../services/local_prefs.dart';
 import '../services/tunnel_service.dart';
 import '../state/selected_server.dart';
 import 'plans_screen.dart';
@@ -32,6 +33,19 @@ import 'servers_screen.dart';
 /// ВАЖНО: платформенная часть (App Group + Network Extension на iOS/macOS
 /// через Xcode, xray.exe на Windows) не может быть настроена только правкой
 /// .dart-файлов — см. app/NATIVE_SETUP.md.
+///
+/// [ИСПРАВЛЕНО — критический баг] Кнопка "Подключить" (и вообще все
+/// авторизованные запросы: ключи, серверы, тарифы) не работала не из-за
+/// этого экрана — `ApiClient._headers` буквально отправлял строку
+/// `'Authorization': '******'` вместо `'******'` (см.
+/// services/api_client.dart). Backend отвечал 401 на любой запрос с
+/// токеном, поэтому активный ключ никогда не находился, а нажатие
+/// "Подключить" не имело эффекта. Также релизный AndroidManifest.xml не
+/// объявлял `INTERNET` (есть только в debug/profile-манифестах, которые в
+/// релизную сборку не попадают) — без этого разрешения ни один сетевой
+/// запрос с телефона физически не может пройти ("серверы не пингуются").
+/// Оба места исправлены — см. api_client.dart и
+/// android/app/src/main/AndroidManifest.xml.
 class ConnectScreen extends StatefulWidget {
   const ConnectScreen({super.key});
   @override
@@ -187,7 +201,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
 
     setState(() => _connecting = true);
     try {
-      await _tunnel.connect(connectionString);
+      // [НОВОЕ] Список приложений, отмеченных "в обход VPN" в
+      // SplitTunnelScreen — реально передаётся в native-слой через
+      // startVless(blockedApps: ...), а не только сохраняется в UI.
+      final bypassed = await LocalPrefs.instance.getBoolMap(PrefKeys.splitTunnelBypass);
+      final blockedApps = bypassed.entries.where((e) => e.value).map((e) => e.key).toList();
+      await _tunnel.connect(connectionString, blockedApps: blockedApps);
       _measureLatency();
     } on TunnelException catch (e) {
       _showError(e.message);

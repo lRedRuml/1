@@ -12,21 +12,20 @@ import '../services/local_prefs.dart';
 /// [ИСПРАВЛЕНО] Раньше здесь был фиксированный демо-список из 5 названий
 /// ('Банк Онлайн', 'Карты', ...) — не имел отношения к реальному
 /// устройству. Теперь список реально читается через пакет `installed_apps`
-/// (Android-only, требует QUERY_ALL_PACKAGES — см. NATIVE_SETUP.md).
+/// (Android-only, требует QUERY_ALL_PACKAGES — см. NATIVE_SETUP.md), вместе
+/// с реальными иконками приложений (`withIcon: true` — раньше не был
+/// передан, поэтому `app.icon` всегда приходил `null`, и вместо реальной
+/// иконки везде показывался плейсхолдер-эмодзи 📱).
 ///
-/// ВАЖНО (осталось честно, принцип 4): включение/выключение тумблера
-/// сейчас сохраняет выбор ТОЛЬКО как локальный UI-стейт (в памяти экрана).
-/// Реальное распределение трафика по приложениям (какие идут через VPN,
-/// какие в обход) требует нативного вызова
-/// `VpnService.Builder.addAllowedApplication/addDisallowedApplication` на
-/// Android — это должен делать пакет `flutter_vless` при старте туннеля, а
-/// подтверждения, что он принимает список пакетов на вход, в его README
-/// нет (только `startVless(remark, config, ...)`, без параметра-списка
-/// приложений). Поэтому пока список реальный, а фактическая маршрутизация
-/// трафика по нему — нет. Если версия flutter_vless, которая реально
-/// подтянется через pub get, добавит такой параметр — это единственное
-/// место, которое нужно доработать (см. `_bypassedPackages` ниже, уже
-/// готов список пакетов для передачи).
+/// [ИСПРАВЛЕНО] Раньше включение/выключение тумблера сохраняло выбор ТОЛЬКО
+/// как локальный стейт экрана и в LocalPrefs, но при подключении
+/// (`TunnelService.connect()`) список пакетов никак не передавался в
+/// нативный туннель — переключатель ничего не менял в реальной
+/// маршрутизации трафика. Теперь `ConnectScreen._toggleConnection()` перед
+/// стартом туннеля читает сохранённый список из LocalPrefs и передаёт его
+/// в `startVless(blockedApps: ...)` — параметр, которым `flutter_vless`
+/// официально поддерживает исключение Android-пакетов из VPN-маршрута
+/// (см. tunnel_service.dart).
 ///
 /// [ИСПРАВЛЕНО] Выбор ("_bypassed") раньше был обычным `Map` полем State —
 /// сбрасывался при уходе с экрана/перезапуске приложения (то же семейство
@@ -69,6 +68,7 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen> {
       final apps = await InstalledApps.getInstalledApps(
         excludeSystemApps: true,
         excludeNonLaunchableApps: true,
+        withIcon: true,
       );
       apps.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
       setState(() {
@@ -85,12 +85,6 @@ class _SplitTunnelScreenState extends State<SplitTunnelScreen> {
       });
     }
   }
-
-  /// Пакеты, которые пользователь пометил "в обход VPN" — готово для
-  /// передачи в нативный слой, когда/если flutter_vless станет это
-  /// поддерживать (см. docstring класса).
-  List<String> get _bypassedPackages =>
-      _bypassed.entries.where((e) => e.value).map((e) => e.key).toList();
 
   @override
   Widget build(BuildContext context) {
