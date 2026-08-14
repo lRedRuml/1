@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/neon.dart';
 import '../services/api_client.dart';
 import '../services/tunnel_service.dart';
+import '../state/selected_server.dart';
 import 'plans_screen.dart';
 import 'servers_screen.dart';
 
@@ -39,9 +41,11 @@ class ConnectScreen extends StatefulWidget {
 class _ConnectScreenState extends State<ConnectScreen> {
   final _api = ApiClient.instance;
   final _tunnel = TunnelService.instance;
+  List<Map<String, dynamic>> _hosts = const [];
   bool _connecting = false;
   bool _loadingKey = true;
   Map<String, dynamic>? _activeKey;
+  Map<String, dynamic>? _selectedHost;
   String? _keyError;
   int? _latencyMs;
 
@@ -49,17 +53,38 @@ class _ConnectScreenState extends State<ConnectScreen> {
   void initState() {
     super.initState();
     _tunnel.status.addListener(_onTunnelStatus);
+    SelectedServer.hostName.addListener(_onSelectedServerChanged);
+    SelectedServer.displayName.addListener(_onSelectedServerChanged);
     _loadKeyState();
   }
 
   @override
   void dispose() {
     _tunnel.status.removeListener(_onTunnelStatus);
+    SelectedServer.hostName.removeListener(_onSelectedServerChanged);
+    SelectedServer.displayName.removeListener(_onSelectedServerChanged);
     super.dispose();
   }
 
   void _onTunnelStatus() {
     if (mounted) setState(() {});
+  }
+
+  void _onSelectedServerChanged() {
+    final selectedName = SelectedServer.hostName.value;
+    Map<String, dynamic>? selectedHost;
+    if (selectedName != null) {
+      for (final host in _hosts) {
+        if (host['host_name'] == selectedName) {
+          selectedHost = host;
+          break;
+        }
+      }
+    }
+    _selectedHost = selectedHost ?? (_hosts.isNotEmpty ? _hosts.first : null);
+    if (!mounted) return;
+    setState(() {});
+    _measureLatency();
   }
 
   bool _isActive(Map<String, dynamic> key) {
@@ -71,10 +96,29 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Future<void> _loadKeyState() async {
     setState(() => _loadingKey = true);
     try {
-      final keys = await _api.getKeys();
+      final results = await Future.wait([_api.getKeys(), _api.getHosts()]);
+      final keys = results[0] as List<dynamic>;
+      final hosts = (results[1] as List<dynamic>).cast<Map<String, dynamic>>();
       final active = keys.cast<Map<String, dynamic>>().where(_isActive);
+      Map<String, dynamic>? selectedHost;
+      if (hosts.isNotEmpty) {
+        for (final host in hosts) {
+          if (host['host_name'] == SelectedServer.hostName.value) {
+            selectedHost = host;
+            break;
+          }
+        }
+        selectedHost ??= hosts.first;
+        final hostName = selectedHost?['host_name'] as String?;
+        if (hostName != null &&
+            (SelectedServer.hostName.value != hostName || SelectedServer.displayName.value == null)) {
+          SelectedServer.select(hostName, hostName);
+        }
+      }
       setState(() {
+        _hosts = hosts;
         _activeKey = active.isNotEmpty ? active.first : null;
+        _selectedHost = selectedHost;
         _keyError = null;
         _loadingKey = false;
       });
@@ -97,10 +141,18 @@ class _ConnectScreenState extends State<ConnectScreen> {
       if (mounted) setState(() => _latencyMs = ms);
       return;
     }
+    final host = _selectedHost;
+    final connectHost = host?['connect_host'] as String?;
+    if (connectHost == null || connectHost.isEmpty) {
+      if (mounted) setState(() => _latencyMs = null);
+      return;
+    }
+    final port = (host?['connect_port'] as num?)?.toInt() ?? 443;
     final sw = Stopwatch()..start();
     try {
-      await _api.getHosts();
+      final socket = await Socket.connect(connectHost, port, timeout: const Duration(seconds: 4));
       sw.stop();
+      socket.destroy();
       if (mounted) setState(() => _latencyMs = sw.elapsedMilliseconds);
     } catch (_) {
       sw.stop();
@@ -174,6 +226,14 @@ class _ConnectScreenState extends State<ConnectScreen> {
     final connected = _tunnel.isConnected;
     final s = _tunnel.status.value;
     final devicesLimit = hasKey ? (_activeKey!['devices_limit'] as num?)?.toInt() : null;
+    final serverName = SelectedServer.displayName.value ??
+        (_selectedHost?['host_name'] as String?) ??
+        'Сервер не выбран';
+    final serverCode = (() {
+      final parts = serverName.trim().split(RegExp(r'\s+'));
+      if (parts.isEmpty || parts.first.isEmpty) return '??';
+      return parts.first.length >= 2 ? parts.first.substring(0, 2).toUpperCase() : parts.first.toUpperCase();
+    })();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
@@ -194,8 +254,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
               child: Text(_keyError!, style: const TextStyle(color: AppColors.danger, fontSize: 12)),
             ),
           ServerPill(
-            code: 'DE',
-            name: 'Германия · Frankfurt',
+            code: serverCode,
+            name: serverName,
             pingLabel: _latencyLabel,
             pingColor: (_latencyMs != null && _latencyMs! < 200) ? AppColors.success : AppColors.textDim,
             trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textDim, size: 18),
