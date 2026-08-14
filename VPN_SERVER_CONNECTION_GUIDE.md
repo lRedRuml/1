@@ -75,7 +75,7 @@ cp backend-patch/database.py /path/to/shopbot/src/shop_bot/webhook_server/databa
 
 ```bash
 # Ключ API приложения (случайная строка, генерируется один раз)
-SHOPBOT_API_KEY=393b9b395689f9624a86060eee8b5584a009ac51e20bf2b2ff6020e85c9e44ac
+SHOPBOT_API_KEY=your-api-key-here-replace-with-actual-key-from-env-file
 
 # Gmail для отправки кодов верификации
 GMAIL_USER=VPNonLineRoBot@gmail.com
@@ -191,8 +191,8 @@ flutter build apk --release \
 ### Шаг 1: Проверить backend
 
 ```bash
-# Попробуй достучаться до API (замени HOST):
-curl -H "X-API-Key: 393b9b395689f9624a86060eee8b5584a009ac51e20bf2b2ff6020e85c9e44ac" \
+# Попробуй достучаться до API (замени YOUR_API_KEY_HERE на реальный ключ из .env):
+curl -H "X-API-Key: YOUR_API_KEY_HERE" \
   https://api.vpnonline.shop/api/v1/hosts
 ```
 

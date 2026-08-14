@@ -175,6 +175,10 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return '$_latencyMs мс · медленно';
   }
 
+  /// Извлекает код страны из имени сервера (первые 2 символа первого слова).
+  /// Примеры: "DE-Frankfurt" -> "DE", "NL Amsterdam" -> "NL", "RU-Moscow" -> "RU".
+  /// Логика совпадает с функцией в servers_screen.dart для консистентности.
+  /// Зависит от формата имени сервера, который приходит из API (host_name).
   String _getCountryCode(String? name) {
     if (name == null || name.isEmpty) return '??';
     final trimmed = name.trim();
