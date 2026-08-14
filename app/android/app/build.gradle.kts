@@ -19,7 +19,12 @@ android {
         applicationId = "su.vpnonline.vpnonline_app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // [ИСПРАВЛЕНО — критический баг] `flutter_vless` требует minSdk >= 23
+        // (см. doc/platform/android.md пакета). `flutter.minSdkVersion` по
+        // умолчанию может быть ниже — если так, нативный слой плагина не
+        // соберётся/не загрузится и кнопка "Подключить" не будет иметь
+        // видимого эффекта (VPN на телефоне не поднимается вообще).
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
@@ -27,6 +32,20 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+    }
+
+    // [ИСПРАВЛЕНО — критический баг] Без этого блока Android Gradle Plugin
+    // упаковывает нативные .so из `flutter_vless` (libxray.so,
+    // libtun2socks.so) сжатыми внутри APK — на части устройств/версий
+    // Android рантайм плагина не может их найти и распаковать на лету, из-за
+    // чего запуск туннеля молча падает: кнопка "Подключить" крутит спиннер
+    // (или вообще ничего не делает), а VPN-профиль в системе так и не
+    // появляется. Именно так настроен официальный example-проект пакета
+    // (`example/android/app/build.gradle.kts`).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
     }
 
     buildTypes {
