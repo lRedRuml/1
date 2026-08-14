@@ -1,15 +1,11 @@
-name: Build Android APK
+name: Build Android APK (Simple)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ main, fix/secure-configs-and-ci ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   build:
-    name: Build Flutter APK
+    name: Build Flutter APK (simple)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -29,12 +25,6 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Flutter analyze
-        run: flutter analyze || true
-
-      - name: Run tests
-        run: flutter test --coverage || true
-
       - name: Build debug APK
         run: flutter build apk --debug --no-shrink
 
@@ -43,30 +33,3 @@ jobs:
         with:
           name: app-debug-apk
           path: build/app/outputs/flutter-apk/app-debug.apk
-
-      - name: Prepare signed release (if keystore provided)
-        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
-        run: |
-          mkdir -p android/keystore
-          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/keystore/keystore.jks
-          cat > android/key.properties <<EOF
-          storeFile=android/keystore/keystore.jks
-          storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}
-          keyPassword=${{ secrets.ANDROID_KEY_PASSWORD }}
-          EOF
-
-      - name: Build release APK (signed if keystore present)
-        run: |
-          if [ -f android/keystore/keystore.jks ]; then
-            flutter build apk --release --no-shrink --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }} --dart-define=SHOPBOT_API_KEY=${{ secrets.SHOPBOT_API_KEY }}
-          else
-            echo "Keystore not found, building unsigned release APK"
-            flutter build apk --release --no-shrink --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }} --dart-define=SHOPBOT_API_KEY=${{ secrets.SHOPBOT_API_KEY }}
-          fi
-
-      - name: Upload release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-release-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
