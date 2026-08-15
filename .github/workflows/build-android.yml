@@ -42,7 +42,7 @@ jobs:
         run: flutter test --coverage || true
 
       - name: Build debug APK
-        run: flutter build apk --debug --no-shrink
+        run: flutter build apk --debug --no-shrink --dart-define=API_BASE_URL=${{ secrets.API_BASE_URL }} --dart-define=SHOPBOT_API_KEY=${{ secrets.SHOPBOT_API_KEY }}
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
