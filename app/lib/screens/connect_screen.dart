@@ -3,6 +3,7 @@ import '../theme.dart';
 import '../widgets/neon.dart';
 import '../services/api_client.dart';
 import '../services/tunnel_service.dart';
+import '../state/selected_server.dart';
 import 'plans_screen.dart';
 import 'servers_screen.dart';
 
@@ -27,6 +28,15 @@ import 'servers_screen.dart';
 /// меряем на этом экране напрямую — секундомером вокруг лёгкого
 /// авторизованного запроса `getHosts()` (это всё равно нужные данные,
 /// отдельного /ping эндпоинта на сервере нет и придумывать его не стал).
+///
+/// [ИСПРАВЛЕНО] Раньше страна на этом экране была захардкожена
+/// ('DE' / 'Германия · Frankfurt') независимо от выбора на ServersScreen.
+/// Теперь берётся из [SelectedServer] — клиентского предпочтения (см.
+/// state/selected_server.dart). ВАЖНО: connection_string у ключа один на
+/// все локации (единый GLOBAL-бандл, см. servers_screen.dart) — то есть
+/// выбор здесь влияет только на отображение, а не на то, к какому
+/// серверу реально подключается VLESS-туннель. Реальное переключение
+/// возможно только после доработки бэкенда (per-host connection_string).
 ///
 /// ВАЖНО: платформенная часть (App Group + Network Extension на iOS/macOS
 /// через Xcode, xray.exe на Windows) не может быть настроена только правкой
@@ -53,6 +63,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
     _tunnel.elapsed.addListener(_onTunnelStatus);
     _tunnel.downloadBytes.addListener(_onTunnelStatus);
     _tunnel.uploadBytes.addListener(_onTunnelStatus);
+    SelectedServer.hostName.addListener(_onTunnelStatus);
+    SelectedServer.displayName.addListener(_onTunnelStatus);
     _loadKeyState();
   }
 
@@ -62,6 +74,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
     _tunnel.elapsed.removeListener(_onTunnelStatus);
     _tunnel.downloadBytes.removeListener(_onTunnelStatus);
     _tunnel.uploadBytes.removeListener(_onTunnelStatus);
+    SelectedServer.hostName.removeListener(_onTunnelStatus);
+    SelectedServer.displayName.removeListener(_onTunnelStatus);
     super.dispose();
   }
 
@@ -174,6 +188,12 @@ class _ConnectScreenState extends State<ConnectScreen> {
     return '$_latencyMs мс · медленно';
   }
 
+  String _codeFromName(String? name) {
+    if (name == null || name.trim().isEmpty) return '??';
+    final firstWord = name.trim().split(RegExp(r'\s+')).first;
+    return firstWord.length >= 2 ? firstWord.substring(0, 2).toUpperCase() : firstWord.toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     final hasKey = _activeKey != null;
@@ -199,8 +219,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
               child: Text(_keyError!, style: const TextStyle(color: AppColors.danger, fontSize: 12)),
             ),
           ServerPill(
-            code: 'DE',
-            name: 'Германия · Frankfurt',
+            code: _codeFromName(SelectedServer.displayName.value),
+            name: SelectedServer.displayName.value ?? 'Сервер не выбран',
             pingLabel: _latencyLabel,
             pingColor: (_latencyMs != null && _latencyMs! < 200) ? AppColors.success : AppColors.textDim,
             trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textDim, size: 18),
