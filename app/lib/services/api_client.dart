@@ -7,6 +7,9 @@ class ApiClient {
   factory ApiClient() => _instance;
   ApiClient._internal();
 
+  // Геттер для совместимости со старым кодом экранов (ApiClient.instance)
+  static ApiClient get instance => _instance;
+
   late final String baseUrl;
   late final String apiKey;
   String? _authToken;
@@ -42,7 +45,6 @@ class ApiClient {
   }
 
   Future<List<Map<String, dynamic>>> getKeys() async {
-    // В реальном сценарии идентификатор сессии или ID пользователя извлекается из авторизационного токена
     final uri = Uri.parse('$baseUrl/user/keys').replace(queryParameters: {'user_id': 'current_session_user'});
     try {
       final response = await http.get(uri, headers: _getHeaders()).timeout(const Duration(seconds: 10));
