@@ -1,22 +1,35 @@
 package su.vpnonline.vpnonline_app
 
-import android.os.Bundle
-import androidx.annotation.Keep
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
-@Keep
-class MainActivity : android.app.Activity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // Динамический вызов инициализации контейнера движка через рефлексию 
-        // для обхода бага изоляции классов компилятора Kotlin под Gradle 8+
-        try {
-            val flutterActivityClass = Class.forName("io.flutter.embedding.android.FlutterActivity")
-            val intent = flutterActivityClass.getMethod("createDefaultIntent", android.content.Context::class.java)
-                .invoke(null, this) as android.content.Intent
-            startActivity(intent)
-            finish()
-        } catch (e: Exception) {
-            android.util.Log.e("VPN_ONLINE_LAUNCHER", "Failed to boot isolate bridge context: ${e.message}")
+class MainActivity: FlutterActivity() {
+    private val CHANNEL = "com.vpnonline.app/tunnel"
+
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
+            try {
+                when (call.method) {
+                    "startTunnel" -> {
+                        val connectionString = call.argument<String>("connection_string")
+                        if (connectionString != null) {
+                            result.success(true)
+                        } else {
+                            result.error("BAD_ARGS", "Missing connection string parameters", null)
+                        }
+                    }
+                    "stopTunnel" -> {
+                        result.success(true)
+                    }
+                    else -> {
+                        result.notImplemented()
+                    }
+                }
+            } catch (e: Exception) {
+                result.error("UNEXPECTED_CRASH", "Native runtime exception: ${e.message}", null)
+            }
         }
     }
 }
