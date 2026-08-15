@@ -13,26 +13,42 @@ class TunnelException implements Exception {
   String toString() => message;
 }
 
-/// [ИСПРАВЛЕНО] Корень бага "Подключено, но интернета нет":
+/// [ИСПРАВЛЕНО v4.3 — реальный баг "Подключено, но интернета нет"]
 ///
-/// Бэкенд в поле connection_string отдаёт ссылку вида
-/// https://vpn.on2026linevp.ru/sub/<uuid> — это URL ПОДПИСКИ 3x-ui,
-/// а не готовый vless://-конфиг. Xray/flutter_vless не умеет сам
-/// понимать такую ссылку как конфигурацию — если отдать её напрямую в
-/// startVless(), нативный VPN-интерфейс на Android поднимется (отсюда и
-/// статус "Подключено"), но внутри будет мусор вместо конфига, и весь
-/// трафик будет молча дропаться.
+/// В прошлой версии этого файла было ДВЕ отдельные проблемы, обе давали
+/// один и тот же симптом (UI: "ПОДКЛЮЧЕНО", 00:00:00, 0 MB, нет иконки
+/// VPN в шторке Android):
 ///
-/// Правильная цепочка:
-///   1) понять, что это НЕ share-ссылка (vless://…), а http(s)-ссылка;
-///   2) СКАЧАТЬ её содержимое обычным GET-запросом (это обычно
-///      base64-строка со списком vless://-ссылок, стандартный формат
-///      подписки 3x-ui);
-///   3) отдать скачанный текст в FlutterVless.parseMany() — он сам
-///      понимает base64 и сам достаёт из него профили;
-///   4) взять первый профиль и получить из него готовый JSON-конфиг
-///      Xray через getFullConfiguration();
-///   5) только этот JSON передавать в startVless().
+/// БАГ №1 (уже был исправлен раньше) — connection_string с бэкенда это
+/// URL подписки 3x-ui (https://.../sub/<uuid>), а не готовая vless://
+/// ссылка. Раньше эта строка отдавалась в конфиг как есть. Сейчас
+/// _resolveXrayConfig() правильно отличает share-ссылку от URL подписки,
+/// скачивает её и парсит через FlutterVless.parseMany() — см. официальный
+/// контракт пакета (doc/api.md репозитория XIIIFOX/flutter_vless):
+/// parse()/parseMany() САМИ понимают base64-payload, ничего вручную
+/// декодировать не нужно.
+///
+/// БАГ №2 (главная причина того, что проблема всё ещё оставалась) —
+/// `status.value = TunnelStatus.connected` выставлялся СРАЗУ после того,
+/// как `startVless()` просто завершался успехом. Но, согласно
+/// официальному API-контракту плагина, startVless() только валидирует
+/// JSON-конфиг и запускает нативный процесс — он НЕ гарантирует, что
+/// туннель реально поднялся. Реальное состояние приходит асинхронно
+/// через `onStatusChanged` в поле `VlessStatus.connectionState`
+/// (enum `VlessConnectionState`: connected / connecting / disconnected /
+/// disconnecting / unknown). Старый `_onNativeStatus()` читал только
+/// download/upload и полностью игнорировал connectionState — поэтому
+/// если нативная сторона падала с ошибкой (invalid config, permission,
+/// сеть) уже ПОСЛЕ вызова startVless(), Dart-слой всё равно показывал
+/// "подключено", а VPN-интерфейс в системе так и не поднимался (отсюда
+/// и отсутствие иконки-ключа в шторке).
+///
+/// Исправление: `status` теперь ПОЛНОСТЬЮ управляется через
+/// `_onNativeStatus()` на основе `connectionState`, а не оптимистично
+/// внутри `connect()`. Плюс добавлен таймаут ожидания реального
+/// подключения (20 секунд) — если нативная сторона зависла в
+/// "connecting" и никогда не прислала connected/error, приложение сама
+/// остановит попытку и покажет ошибку, а не будет вечно крутить спиннер.
 class TunnelService {
   TunnelService._internal() {
     _vless = FlutterVless(onStatusChanged: _onNativeStatus);
@@ -52,35 +68,64 @@ class TunnelService {
   bool get isBusy =>
       status.value == TunnelStatus.connecting || status.value == TunnelStatus.disconnecting;
 
-  /// Меряет задержку через уже поднятый туннель: засекает время ответа
-  /// лёгкого HTTPS-запроса. -1, если туннель не поднят или запрос не удался.
+  /// Меряет задержку через уже поднятый туннель — используем официальный
+  /// метод плагина getConnectedServerDelay() (см. doc/api.md), а не
+  /// ручной HEAD-запрос, который не гарантированно идёт через туннель на
+  /// всех платформах.
   Future<int> connectedDelayMs() async {
     if (!isConnected) return -1;
-    final sw = Stopwatch()..start();
     try {
-      await http
-          .head(Uri.parse('https://www.gstatic.com/generate_204'))
-          .timeout(const Duration(seconds: 5));
-      sw.stop();
-      return sw.elapsedMilliseconds;
+      final ms = await _vless.getConnectedServerDelay().timeout(const Duration(seconds: 6));
+      return ms;
     } catch (_) {
-      sw.stop();
       return -1;
     }
   }
 
-  Timer? _ticker;
-  DateTime? _connectedAt;
-  String? _lastRemark;
+  // Завершается, когда пришёл первый connected/error после connect().
+  Completer<void>? _connectCompleter;
+  Timer? _connectTimeoutTimer;
 
-  void _onNativeStatus(dynamic s) {
-    // download/upload — суммарные байты сессии, отдаёт сам плагин
-    // (см. doc/getting-started.md: status.download / status.upload).
-    try {
-      downloadBytes.value = (s.download ?? 0) as int;
-      uploadBytes.value = (s.upload ?? 0) as int;
-    } catch (_) {
-      // на части платформ поля могут отсутствовать до первого пакета — не критично
+  void _onNativeStatus(VlessStatus s) {
+    downloadBytes.value = s.download;
+    uploadBytes.value = s.upload;
+    elapsed.value = Duration(seconds: s.duration.round());
+
+    switch (s.connectionState) {
+      case VlessConnectionState.connected:
+        status.value = TunnelStatus.connected;
+        _connectTimeoutTimer?.cancel();
+        if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+          _connectCompleter!.complete();
+        }
+        break;
+
+      case VlessConnectionState.connecting:
+        status.value = TunnelStatus.connecting;
+        break;
+
+      case VlessConnectionState.disconnecting:
+        status.value = TunnelStatus.disconnecting;
+        break;
+
+      case VlessConnectionState.disconnected:
+        status.value = TunnelStatus.disconnected;
+        downloadBytes.value = 0;
+        uploadBytes.value = 0;
+        elapsed.value = Duration.zero;
+        _connectTimeoutTimer?.cancel();
+        if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+          // Нативная сторона отвалилась ещё во время попытки подключения.
+          _connectCompleter!.completeError(
+            TunnelException('Соединение не установилось — сервер разорвал попытку подключения.'),
+          );
+        }
+        break;
+
+      case VlessConnectionState.unknown:
+        // Промежуточное/неопознанное состояние платформы — не считаем
+        // это ни успехом, ни ошибкой, просто ждём следующего события.
+        break;
     }
   }
 
@@ -89,22 +134,37 @@ class TunnelService {
     await _vless.initializeVless(
       providerBundleIdentifier: 'su.vpnonline.vpnonlineApp.PacketTunnel',
       groupIdentifier: 'group.su.vpnonline.vpnonlineApp',
+      notificationIconResourceType: 'mipmap',
+      notificationIconResourceName: 'ic_launcher',
     );
     _initialized = true;
   }
 
-  /// [ИСПРАВЛЕНО] connectionString приходит из ключа пользователя
-  /// (API-поле connection_string) и может быть:
+  /// connectionString приходит из ключа пользователя (API-поле
+  /// connection_string) и может быть:
   ///  - готовой share-ссылкой: vless://..., vmess://..., trojan://..., ss://...
   ///  - ссылкой-подпиской 3x-ui: https://.../sub/<uuid>
-  /// Раньше вторая форма передавалась в конфиг как есть — отсюда и баг.
   Future<void> connect(String connectionString, {String remark = 'VPNonLine'}) async {
     final trimmed = connectionString.trim();
     if (trimmed.isEmpty) {
       throw TunnelException('У этого ключа нет ссылки для подключения.');
     }
+    if (isBusy) return;
 
     status.value = TunnelStatus.connecting;
+    _connectCompleter = Completer<void>();
+    _connectTimeoutTimer?.cancel();
+    _connectTimeoutTimer = Timer(const Duration(seconds: 20), () {
+      if (_connectCompleter != null && !_connectCompleter!.isCompleted) {
+        _connectCompleter!.completeError(
+          TunnelException(
+            'Не удалось подключиться за 20 секунд. Проверь, что сервер доступен, '
+            'и попробуй сменить сервер.',
+          ),
+        );
+      }
+    });
+
     try {
       await _ensureInitialized();
 
@@ -112,27 +172,42 @@ class TunnelService {
 
       final granted = await _vless.requestPermission();
       if (!granted) {
+        _connectTimeoutTimer?.cancel();
         status.value = TunnelStatus.disconnected;
-        throw TunnelException('Нет разрешения на создание VPN-соединения.');
+        throw TunnelException(
+          'Нет разрешения на создание VPN-соединения — подтверди системный '
+          'диалог "Разрешить приложению настроить VPN-подключение".',
+        );
       }
 
-      _lastRemark = remark;
+      // startVless() запускает нативный процесс, но НЕ гарантирует, что
+      // туннель уже поднят — реальное подтверждение придёт в
+      // _onNativeStatus() через connectionState.connected, на который мы
+      // ждём ниже через _connectCompleter.
       await _vless.startVless(remark: remark, config: config);
 
-      _connectedAt = DateTime.now();
-      _startTicker();
-      status.value = TunnelStatus.connected;
+      await _connectCompleter!.future;
+      // Дошли сюда — _onNativeStatus() подтвердил connected, status уже
+      // выставлен там же.
     } on TunnelException {
-      status.value = TunnelStatus.error;
+      _connectTimeoutTimer?.cancel();
+      if (status.value != TunnelStatus.connected) {
+        status.value = TunnelStatus.error;
+      }
+      // На всякий случай гасим нативную сторону, если она осталась
+      // в подвешенном состоянии после неудачной попытки.
+      unawaited(_vless.stopVless().catchError((_) {}));
       rethrow;
     } catch (e) {
+      _connectTimeoutTimer?.cancel();
       status.value = TunnelStatus.error;
+      unawaited(_vless.stopVless().catchError((_) {}));
       throw TunnelException('Не удалось подключиться: $e');
     }
   }
 
-  /// Главная точка исправления — превращает то, что реально лежит в
-  /// connection_string, в готовый JSON-конфиг Xray.
+  /// Превращает то, что реально лежит в connection_string, в готовый
+  /// JSON-конфиг Xray.
   Future<String> _resolveXrayConfig(String raw) async {
     final isShareLink = RegExp(
       r'^(vless|vmess|trojan|ss|socks):\/\/',
@@ -140,7 +215,6 @@ class TunnelService {
     ).hasMatch(raw);
 
     if (isShareLink) {
-      // Уже готовая share-ссылка — можно парсить напрямую.
       final parsed = FlutterVless.parse(raw);
       return parsed.getFullConfiguration();
     }
@@ -151,8 +225,7 @@ class TunnelService {
       throw TunnelException('Не удалось распознать ссылку ключа: $raw');
     }
 
-    // Это ссылка-подписка (как раз случай vpn.on2026linevp.ru/sub/...).
-    // Её нужно СКАЧАТЬ, а не передавать в конфиг как строку.
+    // Ссылка-подписка (как раз случай vpn.on2026linevp.ru/sub/...).
     late final http.Response resp;
     try {
       resp = await http
@@ -169,53 +242,53 @@ class TunnelService {
       );
     }
 
-    // parseMany сам понимает, что тело base64-закодировано, и сам
-    // достаёт из него список профилей (vless/vmess/trojan/ss).
-    final profiles = FlutterVless.parseMany(resp.body);
+    // parseMany() сам понимает base64-payload и сам достаёт из него
+    // список профилей (vless/vmess/trojan/ss) — см. doc/api.md пакета.
+    final List<FlutterVlessURL> profiles;
+    try {
+      profiles = FlutterVless.parseMany(resp.body);
+    } catch (e) {
+      throw TunnelException('Не удалось разобрать подписку сервера: $e');
+    }
     if (profiles.isEmpty) {
       throw TunnelException(
         'В подписке не нашлось ни одного рабочего профиля VLESS/VMess/Trojan.',
       );
     }
 
-    // Берём первый профиль подписки. Если бэкенд отдаёт несколько
-    // локаций в одной подписке и нужно подключаться к конкретной —
-    // здесь можно фильтровать profiles по .remark перед .first.
-    return profiles.first.getFullConfiguration();
+    // Берём первый профиль подписки. Если нужно подключаться к
+    // конкретной локации — фильтруй profiles по .remark перед .first.
+    try {
+      return profiles.first.getFullConfiguration();
+    } catch (e) {
+      throw TunnelException('Конфигурация сервера повреждена: $e');
+    }
   }
 
   Future<void> disconnect() async {
+    if (status.value == TunnelStatus.disconnected) return;
     status.value = TunnelStatus.disconnecting;
+    _connectTimeoutTimer?.cancel();
     try {
       await _vless.stopVless();
     } catch (_) {
       // если туннель уже не активен на нативной стороне — не страшно
-    } finally {
-      _stopTicker();
-      downloadBytes.value = 0;
-      uploadBytes.value = 0;
-      elapsed.value = Duration.zero;
-      status.value = TunnelStatus.disconnected;
     }
-  }
-
-  void _startTicker() {
-    _stopTicker();
-    _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (_connectedAt != null) {
-        elapsed.value = DateTime.now().difference(_connectedAt!);
+    // Финальное состояние выставит _onNativeStatus() при получении
+    // connectionState.disconnected. На случай если плагин на какой-то
+    // платформе не пришлёт это событие — подстрахуемся таймаутом.
+    Timer(const Duration(seconds: 3), () {
+      if (status.value == TunnelStatus.disconnecting) {
+        status.value = TunnelStatus.disconnected;
+        downloadBytes.value = 0;
+        uploadBytes.value = 0;
+        elapsed.value = Duration.zero;
       }
     });
   }
 
-  void _stopTicker() {
-    _ticker?.cancel();
-    _ticker = null;
-    _connectedAt = null;
-  }
-
   void dispose() {
-    _stopTicker();
+    _connectTimeoutTimer?.cancel();
     status.dispose();
     downloadBytes.dispose();
     uploadBytes.dispose();
