@@ -1,19 +1,15 @@
 pluginManagement {
-    def flutterSdkPath = {
-        def properties = new Properties()
-        def propertiesFile = new File(settingsDir, "local.properties")
+    val flutterSdkPath = run {
+        val properties = java.util.Properties()
+        val propertiesFile = file("local.properties")
         if (propertiesFile.exists()) {
-            propertiesFile.withReader("UTF-8") { reader -> properties.load(reader) }
+            propertiesFile.reader(Charsets.UTF_8).use { reader ->
+                properties.load(reader)
+            }
         }
-        def sdkPath = properties.getProperty("flutter.sdk")
-        if (sdkPath == null) {
-            sdkPath = System.getenv("FLUTTER_ROOT")
-        }
-        if (sdkPath == null) {
-            throw new GradleException("Flutter SDK not found. Define flutter.sdk in local.properties or FLUTTER_ROOT in environment variables.")
-        }
-        return sdkPath
-    }()
+        val sdkPath = properties.getProperty("flutter.sdk") ?: System.getenv("FLUTTER_ROOT")
+        sdkPath ?: throw GradleException("Flutter SDK not found. Define flutter.sdk in local.properties or FLUTTER_ROOT in environment variables.")
+    }
 
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
 
@@ -25,7 +21,7 @@ pluginManagement {
 }
 
 plugins {
-    id "dev.flutter.flutter-gradle-plugin" version "1.0.0" apply false
+    id("dev.flutter.flutter-gradle-plugin") version "1.0.0" apply false
 }
 
-include ":app"
+include(":app")
