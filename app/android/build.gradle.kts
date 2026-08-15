@@ -29,22 +29,6 @@ android {
         versionName = flutter.versionName
     }
 
-    // [ИСПРАВЛЕНО] flutter_vless запускает Xray-core как отдельный
-    // исполняемый процесс (не просто JNI-библиотеку через
-    // System.loadLibrary) — для этого libxray.so должен быть физически
-    // распакован на диск при установке. Современный AGP по умолчанию
-    // держит .so сжатыми прямо внутри APK ("uncompressed native libs"),
-    // из-за чего плагин не находил файл ("Xray executable not found").
-    // Раньше это пытались исправить через android:extractNativeLibs="true"
-    // в AndroidManifest.xml — но именно эта версия AGP требует делать это
-    // здесь, в packagingOptions, а не в манифесте (манифест теперь даёт
-    // ошибку сборки при явном extractNativeLibs).
-    packaging {
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
-
     buildTypes {
         release {
             // TODO: Add your own signing config for the release build.
