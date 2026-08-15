@@ -8,7 +8,9 @@ pluginManagement {
         properties.getProperty("flutter.sdk") ?: System.getenv("FLUTTER_ROOT")
     }
 
-    includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+    if (flutterSdkPath != null) {
+        includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")
+    }
 
     repositories {
         google()
