@@ -72,15 +72,20 @@ class NeonServerCard extends StatelessWidget {
   }
 }
 
-// Заглушка устаревшего названия класса для совместимости с кодом старых экранов
 class NeonCard extends StatelessWidget {
   final Widget child;
-  const NeonCard({Key? key, required this.child}) : super(key: key);
+  final EdgeInsetsGeometry? margin;
+
+  const NeonCard({
+    Key? key, 
+    required this.child,
+    this.margin,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+      margin: margin ?? const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF121212),
