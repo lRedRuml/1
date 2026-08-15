@@ -48,7 +48,9 @@ jobs:
           path: build/app/outputs/flutter-apk/app-debug.apk
 
       - name: Prepare signed release (if keystore provided)
-        if: secrets.ANDROID_KEYSTORE_BASE64 != ''
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        if: env.KEYSTORE_B64 != ''
         run: mkdir -p android/keystore && echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > android/keystore/keystore.jks && printf 'storeFile=android/keystore/keystore.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" "${{ secrets.ANDROID_KEY_ALIAS }}" "${{ secrets.ANDROID_KEY_PASSWORD }}" > android/key.properties
 
       - name: Build release APK (signed if keystore present)
