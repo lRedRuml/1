@@ -5,17 +5,14 @@ allprojects {
     }
 }
 
-val rootProjectBuildDir = project.layout.buildDirectory.dir("../../build").get().asFile
+rootProject.buildDir = "../build"
 subprojects {
-    project.layout.buildDirectory.set(rootProjectBuildDir.resolve(project.name))
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
 }
 subprojects {
-    plugins.withType<com.android.build.gradle.BasePlugin> {
-        configure<com.android.build.gradle.BaseExtension> {
-            compileOptions {
-                sourceCompatibility = JavaVersion.VERSION_17
-                targetCompatibility = JavaVersion.VERSION_17
-            }
-        }
-    }
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
 }
