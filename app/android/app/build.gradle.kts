@@ -4,10 +4,8 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("kotlin-android")
+    id("dev.flutter.flutter-gradle-plugin")
 }
-
-// Правильное подключение плагина Flutter для Gradle 8+ без изоляции контекста Kotlin
-apply(from = "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle")
 
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
@@ -55,6 +53,4 @@ android {
     }
 }
 
-dependencies {
-    // Gradle автоматически подтянет правильные зависимости embedding-слоя из кэша Flutter SDK
-}
+dependencies {}
