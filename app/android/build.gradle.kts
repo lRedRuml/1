@@ -2,16 +2,21 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url = java.uri("https://googleapis.com") }
     }
 }
 
-rootProject.layout.buildDirectory.set(rootProject.rootDir.resolve("../build"))
-
+val rootProjectBuildDir = project.layout.buildDirectory.dir("../../build").get().asFile
 subprojects {
-    project.layout.buildDirectory.set(rootProject.layout.buildDirectory.get().asFile.resolve(project.name))
-    project.evaluationDependsOn(":app")
+    project.layout.buildDirectory.set(rootProjectBuildDir.resolve(project.name))
 }
-
-tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
+subprojects {
+    plugins.withType<com.android.build.gradle.BasePlugin> {
+        configure<com.android.build.gradle.BaseExtension> {
+            compileOptions {
+                sourceCompatibility = JavaVersion.VERSION_17
+                targetCompatibility = JavaVersion.VERSION_17
+            }
+        }
+    }
 }
