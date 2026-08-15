@@ -12,6 +12,10 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.2.2
   shimmer: ^3.0.0
+  google_fonts: ^6.2.1
+  flutter_vless: ^1.0.1
+  url_launcher: ^6.3.0
+  shared_preferences: ^2.2.3
 
 dev_dependencies:
   flutter_test:
