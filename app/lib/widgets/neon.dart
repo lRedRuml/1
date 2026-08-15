@@ -75,18 +75,20 @@ class NeonServerCard extends StatelessWidget {
 class NeonCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry? margin;
+  final EdgeInsetsGeometry? padding;
 
   const NeonCard({
     Key? key, 
     required this.child,
     this.margin,
+    this.padding,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Container(
       margin: margin ?? const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
-      padding: const EdgeInsets.all(16),
+      padding: padding ?? const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: const Color(0xFF121212),
         borderRadius: BorderRadius.circular(16),
