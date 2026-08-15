@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -132,7 +133,23 @@ class TunnelService {
           config: profile.getFullConfiguration(),
           notificationDisconnectButtonName: 'Отключить',
         );
-        return;
+
+        // [ИСПРАВЛЕНО] startVless() завершается, как только нативный
+        // VPN-сервис ЗАПРОШЕН — это не значит, что VLESS/Reality-хендшейк
+        // с сервером реально прошёл. Настоящий исход приходит позже
+        // асинхронно через onStatusChanged (status). Раньше код считал
+        // профиль рабочим сразу после return из startVless и НИКОГДА не
+        // пробовал следующий сервер из подписки, даже если хендшейк
+        // срывался через секунду ("сервер разорвал попытку подключения").
+        // Теперь дожидаемся реального исхода перед тем как считать сервер
+        // удачным.
+        final ok = await _waitForConnectionOutcome();
+        if (ok) return;
+
+        lastFailure = lastError.value ?? 'сервер разорвал соединение при установке туннеля';
+        try {
+          await _vless!.stopVless();
+        } catch (_) {}
       } catch (e) {
         lastFailure = e;
         try {
@@ -144,6 +161,44 @@ class TunnelService {
     final triedCount = profiles.length;
     final suffix = triedCount > 1 ? ' (испробовано серверов: $triedCount)' : '';
     throw TunnelException('Не удалось запустить туннель: $lastFailure$suffix');
+  }
+
+  /// Ждёт РЕАЛЬНОГО исхода попытки подключения, а не просто возврата из
+  /// startVless(). true — туннель реально поднялся (connected). false —
+  /// состояние ушло из "connecting" в любое другое (сервер разорвал
+  /// соединение, хендшейк не прошёл, сервис сам себя остановил) или истёк
+  /// таймаут ожидания хендшейка.
+  Future<bool> _waitForConnectionOutcome({Duration timeout = const Duration(seconds: 10)}) async {
+    final completer = Completer<bool>();
+    Timer? timer;
+    late final VoidCallback listener;
+
+    void finish(bool result) {
+      if (completer.isCompleted) return;
+      timer?.cancel();
+      status.removeListener(listener);
+      completer.complete(result);
+    }
+
+    listener = () {
+      final state = status.value?.connectionState;
+      if (state == VlessConnectionState.connected) {
+        finish(true);
+      } else if (state != null &&
+          state != VlessConnectionState.connecting &&
+          state != VlessConnectionState.disconnecting) {
+        finish(false);
+      }
+    };
+
+    status.addListener(listener);
+    timer = Timer(timeout, () => finish(false));
+
+    // На случай если состояние уже поменялось до того, как слушатель
+    // был подписан.
+    listener();
+
+    return completer.future;
   }
 
   Future<void> disconnect() async {
