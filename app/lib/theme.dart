@@ -148,6 +148,7 @@ class ServerPill extends StatelessWidget {
   final String? code;
   final String? name;
   final String? pingLabel;
+  final Widget? trailing;
 
   const ServerPill({
     Key? key,
@@ -159,6 +160,7 @@ class ServerPill extends StatelessWidget {
     this.code,
     this.name,
     this.pingLabel,
+    this.trailing,
   }) : super(key: key);
 
   @override
@@ -180,7 +182,7 @@ class ServerPill extends StatelessWidget {
             : const Icon(Icons.dns_rounded, color: AppColors.textDim),
         title: Text(displayTitle, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         subtitle: Text(displaySubtitle, style: const TextStyle(color: AppColors.textDim)),
-        trailing: Container(
+        trailing: trailing ?? Container(
           width: 8,
           height: 8,
           decoration: BoxDecoration(shape: BoxShape.circle, color: pingColor),
