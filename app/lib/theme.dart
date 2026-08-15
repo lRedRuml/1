@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-// Глобальный метод для вызова шрифта без явного указания класса (для connect_screen.dart)
 TextStyle orbitron({double fontSize = 14, Color? color, FontWeight? fontWeight, double? letterSpacing}) {
   return AppTheme.orbitron(fontSize: fontSize, color: color, fontWeight: fontWeight, letterSpacing: letterSpacing);
 }
@@ -59,8 +58,6 @@ class AppTheme {
     );
   }
 }
-
-// --- Совместимые UI-Kit виджеты для экранов приложения ---
 
 class AppHeader extends StatelessWidget {
   final IconData? trailing;
@@ -148,6 +145,7 @@ class ServerPill extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final Color pingColor;
+  final String? code;
 
   const ServerPill({
     Key? key,
@@ -156,6 +154,7 @@ class ServerPill extends StatelessWidget {
     this.isSelected = false,
     required this.onTap,
     this.pingColor = AppColors.success,
+    this.code,
   }) : super(key: key);
 
   @override
@@ -169,6 +168,9 @@ class ServerPill extends StatelessWidget {
       ),
       child: ListTile(
         onTap: onTap,
+        leading: code != null 
+            ? Text(code!, style: const TextStyle(fontSize: 22)) 
+            : const Icon(Icons.dns_rounded, color: AppColors.textDim),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textDim)),
         trailing: Container(
@@ -216,7 +218,7 @@ class StatMiniCard extends StatelessWidget {
 
 class PillButton extends StatelessWidget {
   final String label;
-  final IconData icon;
+  final dynamic icon;
   final VoidCallback onTap;
 
   const PillButton({
@@ -228,6 +230,15 @@ class PillButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    Widget iconWidget;
+    if (icon is IconData) {
+      iconWidget = Icon(icon as IconData, size: 16);
+    } else if (icon is String) {
+      iconWidget = Text(icon as String, style: const TextStyle(fontSize: 14));
+    } else {
+      iconWidget = const SizedBox.shrink();
+    }
+
     return ElevatedButton.icon(
       style: ElevatedButton.styleFrom(
         backgroundColor: const Color(0xFF121212),
@@ -236,7 +247,7 @@ class PillButton extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
       ),
       onPressed: onTap,
-      icon: Icon(icon, size: 16),
+      icon: iconWidget,
       label: Text(label, style: const TextStyle(fontSize: 13)),
     );
   }
