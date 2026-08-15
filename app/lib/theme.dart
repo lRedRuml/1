@@ -140,25 +140,28 @@ class NeonToggle extends StatelessWidget {
 }
 
 class ServerPill extends StatelessWidget {
-  final String title;
+  final String? title;
   final String subtitle;
   final bool isSelected;
   final VoidCallback onTap;
   final Color pingColor;
   final String? code;
+  final String? name;
 
   const ServerPill({
     Key? key,
-    required this.title,
+    this.title,
     required this.subtitle,
     this.isSelected = false,
     required this.onTap,
     this.pingColor = AppColors.success,
     this.code,
+    this.name,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final String displayTitle = name ?? title ?? 'Сервер';
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
@@ -171,7 +174,7 @@ class ServerPill extends StatelessWidget {
         leading: code != null 
             ? Text(code!, style: const TextStyle(fontSize: 22)) 
             : const Icon(Icons.dns_rounded, color: AppColors.textDim),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        title: Text(displayTitle, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
         subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textDim)),
         trailing: Container(
           width: 8,
