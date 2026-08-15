@@ -170,6 +170,15 @@ class TunnelService {
 
       final config = await _resolveXrayConfig(trimmed);
 
+      // [ВРЕМЕННО ДЛЯ ДИАГНОСТИКИ] Печатаем итоговый Xray-конфиг в
+      // logcat, чтобы понять, почему сервер рвёт Reality-хендшейк именно
+      // у этого клиента (v2rayNG тем же сервером пингуется нормально —
+      // значит дело не в сервере, а в том, что тут сгенерировано). После
+      // диагностики этот print можно убрать.
+      debugPrint('=== VPNonLine: итоговый Xray-конфиг ===');
+      debugPrint(config);
+      debugPrint('=== VPNonLine: конец конфига ===');
+
       final granted = await _vless.requestPermission();
       if (!granted) {
         _connectTimeoutTimer?.cancel();
