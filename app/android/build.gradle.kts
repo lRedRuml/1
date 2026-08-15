@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    // Плагин Flutter должен подключаться после Android плагина
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -14,9 +13,7 @@ android {
     }
 
     defaultConfig {
-        // Укажите ваш уникальный Application ID
         applicationId = "su.vpnionline.vpnionline_app"
-        
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
