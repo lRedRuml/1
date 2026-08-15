@@ -10,7 +10,8 @@ import 'servers_screen.dart';
 ///
 /// [ИСПРАВЛЕНО v4.2] Кнопка "Подключить" реально запускает/останавливает
 /// VLESS-туннель через [TunnelService] (обёртка над flutter_vless), RX/TX/
-/// таймер — живые значения из [VlessStatus].
+/// таймер — живые значения из отдельных ValueNotifier сервиса
+/// (elapsed / downloadBytes / uploadBytes).
 ///
 /// [ИСПРАВЛЕНО] Раньше экран ожидал поля `active_in_panel` и
 /// `subscription_url`, которых у реального `GET /user/keys` нет (см.
@@ -49,12 +50,18 @@ class _ConnectScreenState extends State<ConnectScreen> {
   void initState() {
     super.initState();
     _tunnel.status.addListener(_onTunnelStatus);
+    _tunnel.elapsed.addListener(_onTunnelStatus);
+    _tunnel.downloadBytes.addListener(_onTunnelStatus);
+    _tunnel.uploadBytes.addListener(_onTunnelStatus);
     _loadKeyState();
   }
 
   @override
   void dispose() {
     _tunnel.status.removeListener(_onTunnelStatus);
+    _tunnel.elapsed.removeListener(_onTunnelStatus);
+    _tunnel.downloadBytes.removeListener(_onTunnelStatus);
+    _tunnel.uploadBytes.removeListener(_onTunnelStatus);
     super.dispose();
   }
 
@@ -146,8 +153,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
   }
 
   String get _timerLabel {
-    final seconds = _tunnel.status.value?.duration ?? 0;
-    final d = Duration(seconds: seconds);
+    final d = _tunnel.elapsed.value;
     final h = d.inHours.toString().padLeft(2, '0');
     final m = (d.inMinutes % 60).toString().padLeft(2, '0');
     final s = (d.inSeconds % 60).toString().padLeft(2, '0');
@@ -172,7 +178,6 @@ class _ConnectScreenState extends State<ConnectScreen> {
   Widget build(BuildContext context) {
     final hasKey = _activeKey != null;
     final connected = _tunnel.isConnected;
-    final s = _tunnel.status.value;
     final devicesLimit = hasKey ? (_activeKey!['devices_limit'] as num?)?.toInt() : null;
 
     return SingleChildScrollView(
@@ -203,9 +208,9 @@ class _ConnectScreenState extends State<ConnectScreen> {
           ),
           Row(
             children: [
-              StatMiniCard(label: 'Приём', value: _formatBytes(s?.download)),
+              StatMiniCard(label: 'Приём', value: _formatBytes(_tunnel.downloadBytes.value)),
               const SizedBox(width: 10),
-              StatMiniCard(label: 'Отдача', value: _formatBytes(s?.upload)),
+              StatMiniCard(label: 'Отдача', value: _formatBytes(_tunnel.uploadBytes.value)),
               const SizedBox(width: 10),
               StatMiniCard(
                 label: 'Устройств',
