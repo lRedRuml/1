@@ -48,6 +48,27 @@ class TunnelService {
   final ValueNotifier<int> uploadBytes = ValueNotifier(0);
   final ValueNotifier<Duration> elapsed = ValueNotifier(Duration.zero);
 
+  bool get isConnected => status.value == TunnelStatus.connected;
+  bool get isBusy =>
+      status.value == TunnelStatus.connecting || status.value == TunnelStatus.disconnecting;
+
+  /// Меряет задержку через уже поднятый туннель: засекает время ответа
+  /// лёгкого HTTPS-запроса. -1, если туннель не поднят или запрос не удался.
+  Future<int> connectedDelayMs() async {
+    if (!isConnected) return -1;
+    final sw = Stopwatch()..start();
+    try {
+      await http
+          .head(Uri.parse('https://www.gstatic.com/generate_204'))
+          .timeout(const Duration(seconds: 5));
+      sw.stop();
+      return sw.elapsedMilliseconds;
+    } catch (_) {
+      sw.stop();
+      return -1;
+    }
+  }
+
   Timer? _ticker;
   DateTime? _connectedAt;
   String? _lastRemark;
