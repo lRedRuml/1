@@ -25,7 +25,11 @@ import '../services/local_prefs.dart';
 /// [ВАЖНО] Этот экран больше НЕ шаг покупки. Покупка выдаёт ключ сразу на
 /// всех локациях (единый GLOBAL-бандл, см. plans_screen.dart). "Выбор"
 /// здесь влияет только на то, какая локация подсвечивается как
-/// приоритетная в ConnectScreen — чисто клиентская настройка.
+/// приоритетная в ConnectScreen — чисто клиентская настройка. Реальный
+/// VLESS-туннель как шёл, так и идёт по единому connection_string ключа —
+/// подтверждено: бэкенд НЕ умеет отдавать connection_string под конкретный
+/// host_name. Реальное переключение сервера потребует доработки бэкенда;
+/// пока и выбор, и авто-балансировка ниже влияют только на отображение.
 ///
 /// [ИСПРАВЛЕНО] "Избранное" и "авто-балансировка" раньше были локальным
 /// `Set`/`bool` полем State — сбрасывались при уходе с экрана/перезапуске
@@ -36,6 +40,11 @@ import '../services/local_prefs.dart';
 /// синхронизируется между устройствами одного аккаунта) — если понадобится
 /// синхронизация между устройствами, нужен отдельный эндпоинт на бэкенде,
 /// это уже другая задача.
+///
+/// [ИСПРАВЛЕНО] Тумблер "Авто-балансировка" раньше сохранялся, но ни на что
+/// не влиял — не было кода, который бы реально выбирал сервер с наименьшим
+/// пингом. Теперь при включённом тумблере _applyAutoBalance() пересчитывает
+/// лучший сервер каждый раз, когда приходит новый живой пинг.
 class ServersScreen extends StatefulWidget {
   const ServersScreen({super.key});
   @override
@@ -68,9 +77,15 @@ class _ServersScreenState extends State<ServersScreen> {
       final socket = await Socket.connect(host, port ?? 443, timeout: const Duration(seconds: 4));
       sw.stop();
       socket.destroy();
-      if (mounted) setState(() => _livePing[hostName] = sw.elapsedMilliseconds);
+      if (mounted) {
+        setState(() => _livePing[hostName] = sw.elapsedMilliseconds);
+        _applyAutoBalance();
+      }
     } catch (_) {
-      if (mounted) setState(() => _livePing[hostName] = -1);
+      if (mounted) {
+        setState(() => _livePing[hostName] = -1);
+        _applyAutoBalance();
+      }
     }
   }
 
@@ -80,6 +95,34 @@ class _ServersScreenState extends State<ServersScreen> {
       final hostName = host['host_name'] as String? ?? '';
       if (hostName.isEmpty) continue;
       _measureLivePing(hostName, host['connect_host'] as String?, host['connect_port'] as int?);
+    }
+  }
+
+  /// Выбирает сервер с наименьшим измеренным пингом среди уже опрошенных.
+  /// [ВАЖНО] Это чисто клиентский приоритет для UI — на реальный маршрут
+  /// трафика не влияет, т.к. connection_string у ключа один на все локации
+  /// (см. комментарий класса выше). Когда бэкенд научится отдавать
+  /// per-host connection_string, сюда же нужно будет добавить фактическое
+  /// переподключение туннеля на новый хост.
+  void _applyAutoBalance() {
+    if (!_autoBalance || _hosts == null || _hosts!.isEmpty) return;
+    String? bestId;
+    int? bestPing;
+    for (final s in _hosts!) {
+      final host = s as Map<String, dynamic>;
+      final id = host['host_name'] as String? ?? '';
+      if (id.isEmpty) continue;
+      final ping = _livePing[id];
+      if (ping == null || ping < 0) continue;
+      if (bestPing == null || ping < bestPing!) {
+        bestPing = ping;
+        bestId = id;
+      }
+    }
+    if (bestId != null && bestId != _selectedId) {
+      setState(() => _selectedId = bestId);
+      SelectedServer.select(bestId!, bestId);
+      _prefs.setString(PrefKeys.selectedServerId, bestId);
     }
   }
 
@@ -297,6 +340,7 @@ class _ServersScreenState extends State<ServersScreen> {
                     onChanged: (v) {
                       setState(() => _autoBalance = v);
                       _prefs.setBool(PrefKeys.autoBalance, v);
+                      if (v) _applyAutoBalance();
                     },
                   ),
                 ],
