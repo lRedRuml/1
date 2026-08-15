@@ -1,241 +1,116 @@
 import 'package:flutter/material.dart';
-import '../theme.dart';
-import '../widgets/neon.dart';
 import '../services/api_client.dart';
-import 'topup_screen.dart';
 
-/// Экран оформления подписки.
-///
-/// [ИСПРАВЛЕНО — архитектурная ошибка, не только вид]
-/// Предыдущая версия давала выбрать "способ оплаты" (ЮKassa/CryptoBot)
-/// прямо на этом экране и передавала его в несуществующий /orders.
-/// В реальном API (`api.py`) покупка/продление ключа (`/key/create`,
-/// `/key/extend`) вообще не принимает способ оплаты — они просто проверяют
-/// и атомарно списывают БАЛАНС аккаунта. Способ оплаты (ЮKassa/CryptoBot)
-/// нужен только на отдельном шаге — пополнении баланса (`/billing/topup`).
-/// Поэтому: если баланса хватает — кнопка сразу выдаёт ключ; если не
-/// хватает — показываем понятную ошибку и предлагаем пополнить баланс, а
-/// не тихо ведём на несуществующий платёж.
-///
-/// Раньше также не было разницы между "купить новый ключ" и "продлить
-/// существующий" — теперь это разные вызовы API (`createKey` /
-/// `extendKey`), выбираемые параметром [extendKeyId].
 class PlansScreen extends StatefulWidget {
-  const PlansScreen({super.key, this.extendKeyId});
-
-  /// Если задан — экран работает в режиме "продлить этот ключ"
-  /// (`POST /key/extend`), иначе — "купить новый" (`POST /key/create`).
-  final int? extendKeyId;
+  final String? extendKeyId;
+  const PlansScreen({Key? key, this.extendKeyId}) : super(key: key);
 
   @override
   State<PlansScreen> createState() => _PlansScreenState();
 }
 
 class _PlansScreenState extends State<PlansScreen> {
-  final _api = ApiClient.instance;
-  List<dynamic>? _plans; // список тарифов из ключа "GLOBAL" в /plans
-  int _selected = 0;
-  String? _error;
-  bool _loading = true;
-  bool _submitting = false;
-
-  bool get _isExtend => widget.extendKeyId != null;
+  final ApiClient _api = ApiClient.instance;
+  bool _isLoading = false;
+  List<dynamic> _plans = [];
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _fetchPlans();
   }
 
-  Future<void> _load() async {
+  Future<void> _fetchPlans() async {
     setState(() {
-      _loading = true;
-      _error = null;
+      _isLoading = true;
+      _errorMessage = null;
     });
     try {
-      // Реальный /plans отдаёт Map<host_name, List<plan>>, а не плоский
-      // список. "GLOBAL" — единый бандл-тариф на все локации сразу
-      // (см. api.py: api_plans() и то, как /key/create всегда использует
-      // host_name="GLOBAL").
-      final plansByHost = await _api.getPlans();
-      final globalPlans = (plansByHost['GLOBAL'] as List<dynamic>?) ?? [];
-      globalPlans.sort((a, b) =>
-          ((a as Map<String, dynamic>)['months'] as num).compareTo((b as Map<String, dynamic>)['months'] as num));
-      setState(() {
-        _plans = globalPlans;
-        _selected = globalPlans.length > 1 ? 1 : 0;
-        _loading = false;
-      });
-    } on ApiException catch (e) {
-      setState(() { _error = e.message; _loading = false; });
+      final response = await _api.getPlans();
+      if (response['status'] == 'success' && response['data'] is List) {
+        setState(() {
+          _plans = response['data'];
+        });
+      } else {
+        setState(() {
+          _errorMessage = 'Не удалось загрузить тарифные планы';
+        });
+      }
     } catch (e) {
-      setState(() { _error = 'Не удалось загрузить тарифы: $e'; _loading = false; });
+      setState(() {
+        _errorMessage = e.toString().replaceAll('ApiException: ', '');
+      });
+    } finally {
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  String _periodLabel(num months) {
-    final m = months.toInt();
-    if (m == 1) return '1 месяц';
-    if (m >= 2 && m <= 4) return '$m месяца';
-    return '$m месяцев';
-  }
-
-  double _pricePerMonth(Map<String, dynamic> plan) {
-    final price = (plan['price'] as num).toDouble();
-    final months = (plan['months'] as num).toDouble();
-    return months > 0 ? price / months : price;
-  }
-
-  Future<void> _submit() async {
-    if (_plans == null || _plans!.isEmpty) return;
-    final plan = _plans![_selected] as Map<String, dynamic>;
-    final planId = (plan['plan_id'] as num).toInt();
-    setState(() => _submitting = true);
+  Future<void> _handlePurchase(String planId) async {
+    setState(() {
+      _isLoading = true;
+    });
     try {
-      if (_isExtend) {
+      if (widget.extendKeyId != null) {
         await _api.extendKey(keyId: widget.extendKeyId!, planId: planId);
+        _showSnackBar('Подписка успешно продлена!');
       } else {
         await _api.createKey(planId);
+        _showSnackBar('Новый VPN ключ успешно создан!');
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_isExtend ? 'Ключ продлён' : 'Ключ выдан — смотри вкладку «Ключи»')),
-        );
-        Navigator.of(context).pop();
-      }
-    } on ApiException catch (e) {
-      if (mounted) {
-        final insufficientBalance = e.message.contains('Недостаточ');
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(e.message),
-            backgroundColor: AppColors.danger,
-            action: insufficientBalance
-                ? SnackBarAction(
-                    label: 'Пополнить',
-                    // [ИСПРАВЛЕНО] pushNamed('/topup') вёл на несуществующий
-                    // именованный маршрут — крэш при нажатии. Ведём на
-                    // реальный TopUpScreen (см. topup_screen.dart).
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const TopUpScreen()),
-                    ),
-                  )
-                : null,
-          ),
-        );
-      }
+      Navigator.of(context).pop(true);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Не удалось оформить: $e'), backgroundColor: AppColors.danger),
-        );
-      }
+      _showSnackBar(e.toString().replaceAll('ApiException: ', ''));
     } finally {
-      if (mounted) setState(() => _submitting = false);
+      setState(() {
+        _isLoading = false;
+      });
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          AppHeader(screenLabel: _isExtend ? 'Продление ключа' : 'Оформление подписки'),
-          const Text(
-            'Единый VPN-ключ даёт доступ ко всем локациям сразу — выбирать сервер не нужно. '
-            'Оплата — с баланса аккаунта.',
-            style: TextStyle(color: AppColors.textDim, fontSize: 11),
-          ),
-          if (_loading) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Row(
-                children: [
-                  Expanded(child: Text(_error!, style: const TextStyle(color: AppColors.danger, fontSize: 12))),
-                  TextButton(onPressed: _load, child: const Text('Повторить')),
-                ],
-              ),
-            ),
-          if (_plans != null && _plans!.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Text('Тарифы пока не настроены в панели бота (нет тарифов для host "GLOBAL").',
-                  style: TextStyle(color: AppColors.textDim)),
-            ),
-          if (_plans != null)
-            for (var i = 0; i < _plans!.length; i++) ...[
-              _PlanCard(
-                plan: _plans![i] as Map<String, dynamic>,
-                selected: _selected == i,
-                periodLabel: _periodLabel((_plans![i] as Map<String, dynamic>)['months'] as num),
-                perMonth: _pricePerMonth(_plans![i] as Map<String, dynamic>),
-                onTap: () => setState(() => _selected = i),
-              ),
-              const SizedBox(height: 10),
-            ],
-          if (_plans != null && _plans!.isNotEmpty) ...[
-            const SizedBox(height: 8),
-            Center(
-              child: _submitting
-                  ? const Padding(
-                      padding: EdgeInsets.all(8),
-                      child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
-                    )
-                  : PillButton(
-                      label: _isExtend
-                          ? 'Продлить — ${(_plans![_selected] as Map<String, dynamic>)['price']} ₽'
-                          : 'Получить ключ — ${(_plans![_selected] as Map<String, dynamic>)['price']} ₽',
-                      icon: '🔒',
-                      filled: true,
-                      onTap: _submit,
-                    ),
-            ),
-          ],
-        ],
-      ),
+  void _showSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
-}
-
-class _PlanCard extends StatelessWidget {
-  const _PlanCard({
-    required this.plan,
-    required this.selected,
-    required this.periodLabel,
-    required this.perMonth,
-    required this.onTap,
-  });
-
-  final Map<String, dynamic> plan;
-  final bool selected;
-  final String periodLabel;
-  final double perMonth;
-  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return NeonCard(
-      selected: selected,
-      onTap: onTap,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(periodLabel, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-              const SizedBox(height: 2),
-              Text('≈ ${perMonth.toStringAsFixed(0)} ₽ / мес',
-                  style: const TextStyle(fontSize: 10, color: AppColors.textDim)),
-            ],
-          ),
-          Text('${plan['price']}', style: orbitron(fontSize: 16, color: AppColors.violetGlow)),
-        ],
+    return Scaffold(
+      backgroundColor: const Color(0xFF000000),
+      appBar: AppBar(
+        title: Text(widget.extendKeyId != null ? 'Продление подписки' : 'Тарифные планы'),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(Color(0xFFB026FF))))
+          : _errorMessage != null
+              ? Center(child: Text(_errorMessage!, style: const TextStyle(color: Colors.red)))
+              : ListView.builder(
+                  itemCount: _plans.length,
+                  itemBuilder: (context, index) {
+                    final plan = _plans[index];
+                    return Card(
+                      color: const Color(0xFF1E1E1E),
+                      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      child: ListTile(
+                        title: Text(plan['name'] ?? 'Тариф', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text('${plan['duration_days'] ?? 0} дней • Лимит устройств: ${plan['devices_limit'] ?? 1}'),
+                        trailing: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFB026FF),
+                            foregroundColor: Colors.white,
+                          ),
+                          onPressed: () => _handlePurchase(plan['id'].toString()),
+                          child: Text('${plan['price'] ?? 0} ₽'),
+                        ),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }
