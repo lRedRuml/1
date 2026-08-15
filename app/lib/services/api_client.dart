@@ -2,12 +2,19 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 
+// Класс-заглушка ошибок для совместимости с кодом экранов (plans_screen и topup_screen)
+class ApiException implements Exception {
+  final String message;
+  ApiException(this.message);
+  @override
+  String toString() => message;
+}
+
 class ApiClient {
   static final ApiClient _instance = ApiClient._internal();
   factory ApiClient() => _instance;
   ApiClient._internal();
 
-  // Геттер для совместимости со старым кодом экранов (ApiClient.instance)
   static ApiClient get instance => _instance;
 
   late final String baseUrl;
@@ -40,7 +47,7 @@ class ApiClient {
       final response = await http.get(uri, headers: _getHeaders()).timeout(const Duration(seconds: 10));
       return _processResponse(response);
     } on SocketException {
-      throw const HttpException('Отсутствует интернет-соединение.');
+      throw ApiException('Отсутствует интернет-соединение.');
     }
   }
 
@@ -72,18 +79,80 @@ class ApiClient {
     }
   }
 
+  // --- Новые методы для интеграции с планами и биллингом ---
+
+  Future<Map<String, dynamic>> getPlans() async {
+    final uri = Uri.parse('$baseUrl/plans');
+    try {
+      final response = await http.get(uri, headers: _getHeaders()).timeout(const Duration(seconds: 10));
+      return _processResponse(response);
+    } on SocketException {
+      throw ApiException('Ошибка сети при загрузке тарифных планов.');
+    }
+  }
+
+  Future<Map<String, dynamic>> createKey(String planId) async {
+    final uri = Uri.parse('$baseUrl/keys/create');
+    try {
+      final response = await http.post(
+        uri, 
+        headers: _getHeaders(),
+        body: json.encode({'plan_id': planId}),
+      ).timeout(const Duration(seconds: 10));
+      return _processResponse(response);
+    } on SocketException {
+      throw ApiException('Ошибка сети при выпуске ключа.');
+    }
+  }
+
+  Future<Map<String, dynamic>> extendKey({required String keyId, required String planId}) async {
+    final uri = Uri.parse('$baseUrl/keys/extend');
+    try {
+      final response = await http.post(
+        uri, 
+        headers: _getHeaders(),
+        body: json.encode({'key_id': keyId, 'plan_id': planId}),
+      ).timeout(const Duration(seconds: 10));
+      return _processResponse(response);
+    } on SocketException {
+      throw ApiException('Ошибка сети при продлении подписки.');
+    }
+  }
+
+  Future<String> billingTopup({required double amount, required String method}) async {
+    final uri = Uri.parse('$baseUrl/billing/topup');
+    try {
+      final response = await http.post(
+        uri, 
+        headers: _getHeaders(),
+        body: json.encode({'amount': amount, 'method': method}),
+      ).timeout(const Duration(seconds: 10));
+      
+      final processed = _processResponse(response);
+      if (processed['status'] == 'success' && processed['data'] != null) {
+        return processed['data']['payment_url'] ?? '';
+      }
+      throw ApiException('Не удалось получить ссылку на оплату.');
+    } on SocketException {
+      throw ApiException('Ошибка сети при формировании счета.');
+    }
+  }
+
   Map<String, dynamic> _processResponse(http.Response response) {
     if (response.statusCode == 401) {
-      throw const HttpException('Ошибка авторизации: Неверный API ключ.');
+      throw ApiException('Ошибка авторизации: Неверный API ключ.');
     }
     if (response.statusCode >= 500) {
-      throw const HttpException('Внутренняя ошибка сервера бэкенда.');
+      throw ApiException('Внутренняя ошибка сервера бэкенда.');
     }
     
     final decoded = json.decode(response.body);
     if (decoded is Map<String, dynamic>) {
+      if (decoded['status'] == 'error' || decoded['error'] != null) {
+        throw ApiException(decoded['error'] ?? decoded['message'] ?? 'Неизвестная ошибка сервера.');
+      }
       return decoded;
     }
-    throw const FormatException('Неверный формат ответа сервера.');
+    throw ApiException('Неверный формат ответа сервера.');
   }
 }
