@@ -1,11 +1,13 @@
 plugins {
     id("com.android.application")
-    id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Стабильное подключение Flutter-скрипта сборки без дублирования тасок
+apply(from = "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle")
 
 android {
     namespace = "su.vpnionline.vpnionline_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 34
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -14,10 +16,10 @@ android {
 
     defaultConfig {
         applicationId = "su.vpnionline.vpnionline_app"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        minSdk = 21
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
     }
 
     buildTypes {
@@ -25,8 +27,4 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
-}
-
-flutter {
-    source = "../.."
 }
