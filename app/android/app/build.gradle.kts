@@ -53,4 +53,9 @@ android {
     }
 }
 
-dependencies {}
+dependencies {
+    // Явное принудительное подключение стабильного Android-эмбеддинга Flutter SDK 
+    // из официального репозитория Google Maven для исправления бага изоляции классов в Gradle 8+
+    debugImplementation("io.flutter:flutter_embedding_debug:1.0.0-e672b006451c588db521dc43bb4df35811a2d13b")
+    releaseImplementation("io.flutter:flutter_embedding_release:1.0.0-e672b006451c588db521dc43bb4df35811a2d13b")
+}
