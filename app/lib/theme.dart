@@ -147,6 +147,7 @@ class ServerPill extends StatelessWidget {
   final Color pingColor;
   final String? code;
   final String? name;
+  final String? pingLabel;
 
   const ServerPill({
     Key? key,
@@ -157,11 +158,14 @@ class ServerPill extends StatelessWidget {
     this.pingColor = AppColors.success,
     this.code,
     this.name,
+    this.pingLabel,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     final String displayTitle = name ?? title ?? 'Сервер';
+    final String displaySubtitle = pingLabel != null ? '$subtitle • $pingLabel' : subtitle;
+
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 4),
       decoration: BoxDecoration(
@@ -175,7 +179,7 @@ class ServerPill extends StatelessWidget {
             ? Text(code!, style: const TextStyle(fontSize: 22)) 
             : const Icon(Icons.dns_rounded, color: AppColors.textDim),
         title: Text(displayTitle, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
-        subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textDim)),
+        subtitle: Text(displaySubtitle, style: const TextStyle(color: AppColors.textDim)),
         trailing: Container(
           width: 8,
           height: 8,
