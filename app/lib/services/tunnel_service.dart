@@ -47,6 +47,16 @@ class TunnelService {
     elapsed.value = Duration(seconds: s.duration);
     downloadBytes.value = s.download;
     uploadBytes.value = s.upload;
+
+    // [ИСПРАВЛЕНО] Сохраняем сырое состояние от нативного слоя
+    // (Android/iOS/Xray) в lastError. Раньше при сорванном хендшейке эта
+    // информация нигде не сохранялась, и пользователь видел только общую
+    // заглушку "сервер разорвал соединение при установке туннеля" вместо
+    // настоящей причины сбоя.
+    if (s.connectionState != VlessConnectionState.connecting &&
+        s.connectionState != VlessConnectionState.connected) {
+      lastError.value = s.state;
+    }
   }
 
   Future<List<FlutterVlessURL>> _fetchOrderedProfiles(String connectionString, {String? preferredRemark}) async {
@@ -155,12 +165,14 @@ class TunnelService {
         // ЗАПРОШЕН — это не значит, что VLESS/Reality-хендшейк с сервером
         // реально прошёл. Настоящий исход приходит позже асинхронно через
         // onStatusChanged (status). Ждём его перед тем как считать сервер
-        // удачным — иначе сорванный хендшейк никогда не переключал бы на
-        // следующий сервер из подписки.
+        // удачным.
         final ok = await _waitForConnectionOutcome();
         if (ok) return;
 
-        lastFailure = lastError.value ?? 'сервер разорвал соединение при установке туннеля';
+        // [ИСПРАВЛЕНО] Раньше здесь была общая заглушка вместо реальной
+        // причины сбоя. Теперь lastError.value содержит настоящий сырой
+        // текст состояния от нативного слоя (см. _onStatus выше).
+        lastFailure = lastError.value ?? 'нет ответа от сервера';
         try {
           await _vless!.stopVless();
         } catch (_) {}
