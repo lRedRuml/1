@@ -4,8 +4,10 @@ import java.util.Properties
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    id("dev.flutter.flutter-gradle-plugin")
 }
+
+// Правильное подключение плагина Flutter для Gradle 8+ без изоляции контекста Kotlin
+apply(from = "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle")
 
 val localProperties = Properties()
 val localPropertiesFile = rootProject.file("local.properties")
@@ -17,9 +19,6 @@ if (localPropertiesFile.exists()) {
 
 val flutterVersionCode = localProperties.getProperty("flutter.versionCode") ?: "1"
 val flutterVersionName = localProperties.getProperty("flutter.versionName") ?: "1.0.0"
-
-// Поиск пути к Flutter SDK для ручного маппинга зависимостей при сбоях компилятора Kotlin
-val flutterRootPath = System.getenv("FLUTTER_ROOT") ?: localProperties.getProperty("flutter.sdk")
 
 android {
     namespace = "su.vpnonline.vpnonline_app"
@@ -57,9 +56,5 @@ android {
 }
 
 dependencies {
-    // Жесткое перенаправление компилятора на встраиваемые системные JAR-архивы движка Flutter,
-    // если внутренние Gradle-таски сборщика не смогли пробросить ссылки на классы 'io.flutter'
-    if (flutterRootPath != null) {
-        implementation(files("$flutterRootPath/packages/flutter_tools/gradle/flutter.jar"))
-    }
+    // Gradle автоматически подтянет правильные зависимости embedding-слоя из кэша Flutter SDK
 }
