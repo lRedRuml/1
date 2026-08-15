@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+// Глобальный метод для вызова шрифта без явного указания класса (для connect_screen.dart)
+TextStyle orbitron({double fontSize = 14, Color? color, FontWeight? fontWeight, double? letterSpacing}) {
+  return AppTheme.orbitron(fontSize: fontSize, color: color, fontWeight: fontWeight, letterSpacing: letterSpacing);
+}
+
 class AppColors {
   static const Color success = Color(0xFF00E676);
   static const Color warning = Color(0xFFFFB300);
@@ -59,8 +64,15 @@ class AppTheme {
 
 class AppHeader extends StatelessWidget {
   final IconData? trailing;
+  final VoidCallback? onTrailingTap;
   final String screenLabel;
-  const AppHeader({Key? key, this.trailing, required this.screenLabel}) : super(key: key);
+
+  const AppHeader({
+    Key? key, 
+    this.trailing, 
+    this.onTrailingTap, 
+    required this.screenLabel
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +82,11 @@ class AppHeader extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(screenLabel, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-          if (trailing != null) Icon(trailing, color: Colors.white),
+          if (trailing != null)
+            GestureDetector(
+              onTap: onTrailingTap,
+              child: Icon(trailing, color: Colors.white),
+            ),
         ],
       ),
     );
@@ -122,6 +138,106 @@ class NeonToggle extends StatelessWidget {
       activeTrackColor: AppColors.success.withOpacity(0.3),
       inactiveThumbColor: Colors.grey,
       inactiveTrackColor: Colors.white10,
+    );
+  }
+}
+
+class ServerPill extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final Color pingColor;
+
+  const ServerPill({
+    Key? key,
+    required this.title,
+    required this.subtitle,
+    this.isSelected = false,
+    required this.onTap,
+    this.pingColor = AppColors.success,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      decoration: BoxDecoration(
+        color: isSelected ? const Color(0xFF1E1E1E) : const Color(0xFF121212),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: isSelected ? AppColors.violetGlow : AppColors.border),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white)),
+        subtitle: Text(subtitle, style: const TextStyle(color: AppColors.textDim)),
+        trailing: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: pingColor),
+        ),
+      ),
+    );
+  }
+}
+
+class StatMiniCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final Widget? icon;
+
+  const StatMiniCard({
+    Key? key,
+    required this.label,
+    required this.value,
+    this.icon,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF121212),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: AppColors.textDim, fontSize: 11)),
+          const SizedBox(height: 4),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+        ],
+      ),
+    );
+  }
+}
+
+class PillButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const PillButton({
+    Key? key,
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: const Color(0xFF121212),
+        foregroundColor: Colors.white,
+        side: const BorderSide(color: AppColors.border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100)),
+      ),
+      onPressed: onTap,
+      icon: Icon(icon, size: 16),
+      label: Text(label, style: const TextStyle(fontSize: 13)),
     );
   }
 }
